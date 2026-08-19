@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Painel da Cozinha</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --paper:#FAF6EC;
+    --ink:#211F1B;
+    --ink-soft:#8B8574;
+    --bg:#14140F;
+    --panel:#1F1E19;
+    --stamp:#B4392C;
+    --sage:#6E7A56;
+    --amber:#C08A2E;
+    --line:#37352C;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--paper);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+
+  /* LOGIN */
+  .login-wrap{
+    min-height:100vh; display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .login-box{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:40px 36px;
+    width:100%; max-width:360px;
+    text-align:center;
+  }
+  .login-box .stamp{
+    display:inline-block; border:2px solid var(--paper); border-radius:6px;
+    padding:10px 20px; transform:rotate(-2deg);
+    font-family:'Fraunces',serif; font-weight:700; font-size:20px;
+    margin-bottom:28px;
+  }
+  .login-box input{
+    width:100%; background:#14140F; border:1px solid var(--line);
+    color:var(--paper); padding:12px 14px; border-radius:8px;
+    font-family:'IBM Plex Mono',monospace; font-size:14px;
+    margin-bottom:12px;
+  }
+  .login-box button{
+    width:100%; background:var(--stamp); color:var(--paper); border:none;
+    padding:13px; border-radius:8px; font-family:'IBM Plex Mono',monospace;
+    font-weight:700; letter-spacing:1px; font-size:13px; cursor:pointer;
+    margin-top:6px;
+  }
+  .login-box button:disabled{ opacity:0.5; }
+  .login-error{
+    color:#E27C6F; font-family:'IBM Plex Mono',monospace; font-size:12.5px;
+    margin-top:12px; display:none;
+  }
+
+  /* HEADER */
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:16px 24px; border-bottom:1px solid var(--line);
+  }
+  .topbar .stamp{
+    display:inline-block; border:2px solid var(--paper); border-radius:6px;
+    padding:6px 14px; transform:rotate(-2deg);
+    font-family:'Fraunces',serif; font-weight:700; font-size:16px;
+  }
+  .logout-btn{
+    background:none; border:1px solid var(--line); color:var(--ink-soft);
+    padding:8px 14px; border-radius:8px; font-family:'IBM Plex Mono',monospace;
+    font-size:12px; cursor:pointer;
+  }
+
+  /* BOARD */
+  .board{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:1px;
+    background:var(--line);
+  }
+  @media (max-width: 900px){
+    .board{ grid-template-columns:1fr; }
+  }
+  .col{ background:var(--bg); min-height:70vh; }
+  .col-head{
+    padding:16px 18px 12px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px; letter-spacing:2px; text-transform:uppercase;
+    display:flex; justify-content:space-between; align-items:center;
+    position:sticky; top:0; background:var(--bg); z-index:2;
+  }
+  .col-head .dot{ width:9px; height:9px; border-radius:50%; margin-right:8px; display:inline-block; }
+  .col[data-status="novo"] .dot{ background:var(--stamp); }
+  .col[data-status="preparando"] .dot{ background:var(--amber); }
+  .col[data-status="pronto"] .dot{ background:var(--sage); }
+  .col-count{ color:var(--ink-soft); }
+
+  .col-items{ padding:0 12px 24px; display:flex; flex-direction:column; gap:12px; }
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:16px 16px 14px;
+  }
+  .card-top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .card-mesa{
+    font-family:'Fraunces',serif; font-weight:700; font-size:20px;
+  }
+  .card-time{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft);
+  }
+  .card-time.late{ color:#E27C6F; }
+
+  .card-items{ margin:10px 0; }
+  .card-item{
+    font-family:'IBM Plex Mono',monospace; font-size:13.5px;
+    padding:5px 0; border-bottom:1px dotted var(--line);
+    display:flex; justify-content:space-between; gap:8px;
+  }
+  .card-item:last-child{ border-bottom:none; }
+  .card-item-obs{
+    font-family:'Inter',sans-serif; font-size:11.5px; color:var(--amber);
+    margin-top:2px;
+  }
+  .card-obs-geral{
+    font-family:'Inter',sans-serif; font-size:12px; color:var(--ink-soft);
+    margin-top:8px; font-style:italic;
+  }
+
+  .card-actions{ display:flex; gap:8px; margin-top:12px; }
+  .card-actions button{
+    flex:1;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px;
+    letter-spacing:0.5px; padding:10px; border-radius:8px; border:none; cursor:pointer;
+  }
+  .btn-advance{ background:var(--sage); color:var(--paper); }
+  .btn-cancel{ background:transparent; color:var(--ink-soft); border:1px solid var(--line) !important; }
+
+  .col-empty{
+    color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:12.5px;
+    padding:30px 6px; text-align:center;
+  }
+
+  .print-flag{
+    font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+    color:var(--ink-soft); margin-top:6px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+/* =========================================================
+   CONFIGURAÇÃO — mesmos dados do cardápio (index.html)
+========================================================= */
+const SUPABASE_URL = "https://xdcevntyknfuofktcjqh.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ni_JrSo3MM7i5aLM9hdKOw_pl7lkZcZ";
+/* ========================================================= */
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById("app");
+
+let pedidos = [];
+let knownIds = new Set();
+let session = null;
+
+function beep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.15;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, 220);
+  } catch(e){}
+}
+
+function minutosDesde(dataStr){
+  const diffMs = Date.now() - new Date(dataStr).getTime();
+  return Math.max(0, Math.floor(diffMs / 60000));
+}
+
+/* ---------------- LOGIN ---------------- */
+function renderLogin(msg){
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-box">
+        <div class="stamp">Painel da Cozinha</div>
+        <input type="email" id="loginEmail" placeholder="e-mail" autocomplete="username"/>
+        <input type="password" id="loginSenha" placeholder="senha" autocomplete="current-password"/>
+        <button id="loginBtn">ENTRAR</button>
+        <div class="login-error" id="loginError">${msg || ''}</div>
+      </div>
+    </div>
+  `;
+  if (msg) document.getElementById("loginError").style.display = "block";
+
+  document.getElementById("loginBtn").addEventListener("click", doLogin);
+  document.getElementById("loginSenha").addEventListener("keydown", e => {
+    if (e.key === "Enter") doLogin();
+  });
+}
+
+async function doLogin(){
+  const email = document.getElementById("loginEmail").value.trim();
+  const senha = document.getElementById("loginSenha").value;
+  const btn = document.getElementById("loginBtn");
+  btn.disabled = true; btn.textContent = "ENTRANDO...";
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: senha });
+
+  if (error){
+    renderLogin("E-mail ou senha incorretos.");
+    return;
+  }
+  session = data.session;
+  startBoard();
+}
+
+async function checkSession(){
+  const { data } = await sb.auth.getSession();
+  if (data.session){
+    session = data.session;
+    startBoard();
+  } else {
+    renderLogin();
+  }
+}
+
+/* ---------------- BOARD ---------------- */
+async function startBoard(){
+  await loadPedidos();
+  renderBoard();
+  subscribeRealtime();
+  setInterval(renderBoard, 30000); // atualiza os "há X min" mesmo sem eventos novos
+}
+
+async function loadPedidos(){
+  const { data, error } = await sb
+    .from("pedidos")
+    .select("*, mesas(numero), itens_pedido(*)")
+    .in("status", ["novo", "preparando", "pronto"])
+    .order("created_at", { ascending:true });
+
+  if (error){ console.error(error); return; }
+
+  const novoIds = new Set(data.map(p => p.id));
+  const temPedidoNovo = [...novoIds].some(id => !knownIds.has(id));
+  if (knownIds.size > 0 && temPedidoNovo) beep();
+  knownIds = novoIds;
+
+  pedidos = data;
+}
+
+function subscribeRealtime(){
+  sb.channel("pedidos-realtime")
+    .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, async () => {
+      await loadPedidos(); renderBoard();
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "itens_pedido" }, async () => {
+      await loadPedidos(); renderBoard();
+    })
+    .subscribe();
+}
+
+const COLUNAS = [
+  { status: "novo", label: "Novo" },
+  { status: "preparando", label: "Preparando" },
+  { status: "pronto", label: "Pronto" }
+];
+
+const PROXIMO_STATUS = { novo: "preparando", preparando: "pronto", pronto: "entregue" };
+const LABEL_ACAO = { novo: "Iniciar preparo", preparando: "Marcar pronto", pronto: "Marcar entregue" };
+
+function renderBoard(){
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="stamp">Painel da Cozinha</div>
+      <button class="logout-btn" id="logoutBtn">sair</button>
+    </div>
+    <div class="board">
+      ${COLUNAS.map(col => {
+        const itens = pedidos.filter(p => p.status === col.status);
+        return `
+          <div class="col" data-status="${col.status}">
+            <div class="col-head">
+              <span><span class="dot"></span>${col.label}</span>
+              <span class="col-count">${itens.length}</span>
+            </div>
+            <div class="col-items">
+              ${itens.length === 0 ? `<div class="col-empty">Nenhum pedido</div>` : itens.map(renderCard).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  document.getElementById("logoutBtn").addEventListener("click", async () => {
+    await sb.auth.signOut();
+    renderLogin();
+  });
+
+  document.querySelectorAll("[data-advance]").forEach(btn => {
+    btn.addEventListener("click", () => avancarStatus(btn.dataset.advance, btn.dataset.novoStatus));
+  });
+  document.querySelectorAll("[data-cancel]").forEach(btn => {
+    btn.addEventListener("click", () => cancelarPedido(btn.dataset.cancel));
+  });
+}
+
+function renderCard(p){
+  const mins = minutosDesde(p.created_at);
+  const numeroMesa = p.mesas?.numero ?? "?";
+  const proximo = PROXIMO_STATUS[p.status];
+  return `
+    <div class="card">
+      <div class="card-top">
+        <div class="card-mesa">MESA ${String(numeroMesa).padStart(2,'0')}</div>
+        <div class="card-time ${mins >= 15 ? 'late' : ''}">há ${mins} min</div>
+      </div>
+      <div class="card-items">
+        ${(p.itens_pedido || []).map(i => `
+          <div class="card-item">
+            <span>${i.quantidade}x ${i.nome_produto}</span>
+          </div>
+          ${i.observacao ? `<div class="card-item-obs">obs: ${i.observacao}</div>` : ''}
+        `).join('')}
+      </div>
+      ${p.observacao ? `<div class="card-obs-geral">Obs. geral: ${p.observacao}</div>` : ''}
+      <div class="print-flag">${p.impresso ? '🖨️ comanda impressa' : '⏳ aguardando impressão'}</div>
+      <div class="card-actions">
+        <button class="btn-advance" data-advance="${p.id}" data-novo-status="${proximo}">${LABEL_ACAO[p.status]}</button>
+        ${p.status === 'novo' ? `<button class="btn-cancel" data-cancel="${p.id}">cancelar</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function avancarStatus(pedidoId, novoStatus){
+  const { error } = await sb.from("pedidos").update({ status: novoStatus }).eq("id", pedidoId);
+  if (error) console.error(error);
+  await loadPedidos();
+  renderBoard();
+}
+
+async function cancelarPedido(pedidoId){
+  if (!confirm("Cancelar este pedido?")) return;
+  const { error } = await sb.from("pedidos").update({ status: "cancelado" }).eq("id", pedidoId);
+  if (error) console.error(error);
+  await loadPedidos();
+  renderBoard();
+}
+
+checkSession();
+</script>
+</body>
+</html>
