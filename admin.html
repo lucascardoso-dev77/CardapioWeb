@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Administração do Cardápio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --paper:#FAF6EC;
+    --paper-dim:#F1EADA;
+    --ink:#211F1B;
+    --ink-soft:#6B6558;
+    --bg:#181714;
+    --stamp:#B4392C;
+    --sage:#6E7A56;
+    --line:#D8CFBB;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:var(--bg); color:var(--ink); font-family:'Inter',sans-serif; min-height:100vh; }
+
+  .login-wrap{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .login-box{
+    background:#1F1E19; border:1px solid #37352C; border-radius:16px;
+    padding:40px 36px; width:100%; max-width:360px; text-align:center; color:var(--paper);
+  }
+  .login-box .stamp{
+    display:inline-block; border:2px solid var(--paper); border-radius:6px;
+    padding:10px 20px; transform:rotate(-2deg);
+    font-family:'Fraunces',serif; font-weight:700; font-size:18px; margin-bottom:26px;
+  }
+  .login-box input{
+    width:100%; background:#14140F; border:1px solid #37352C; color:var(--paper);
+    padding:12px 14px; border-radius:8px; font-family:'IBM Plex Mono',monospace;
+    font-size:14px; margin-bottom:12px;
+  }
+  .login-box button{
+    width:100%; background:var(--stamp); color:var(--paper); border:none; padding:13px;
+    border-radius:8px; font-family:'IBM Plex Mono',monospace; font-weight:700;
+    letter-spacing:1px; font-size:13px; cursor:pointer;
+  }
+  .login-error{ color:#E27C6F; font-family:'IBM Plex Mono',monospace; font-size:12.5px; margin-top:12px; display:none; }
+
+  .topbar{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:16px 24px; background:#14140F; color:var(--paper);
+  }
+  .topbar .stamp{
+    display:inline-block; border:2px solid var(--paper); border-radius:6px;
+    padding:6px 14px; transform:rotate(-2deg);
+    font-family:'Fraunces',serif; font-weight:700; font-size:15px;
+  }
+  .logout-btn{
+    background:none; border:1px solid #37352C; color:#B8B2A2; padding:8px 14px;
+    border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer;
+  }
+
+  .tabs{ display:flex; gap:8px; padding:16px 24px 0; background:var(--bg); }
+  .tab-btn{
+    background:none; border:none; color:#B8B2A2; padding:10px 4px; cursor:pointer;
+    font-family:'IBM Plex Mono',monospace; font-size:13px; letter-spacing:1px;
+    text-transform:uppercase; border-bottom:2px solid transparent;
+  }
+  .tab-btn.active{ color:var(--paper); border-bottom-color:var(--stamp); }
+
+  .content{ background:var(--paper); min-height:80vh; padding:24px; }
+  .content-inner{ max-width:900px; margin:0 auto; }
+
+  .form-card{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:20px; margin-bottom:24px;
+  }
+  .form-card h3{ font-family:'Fraunces',serif; font-size:17px; margin-bottom:14px; }
+  .form-row{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .form-row .field{ flex:1; min-width:140px; }
+  .field label{
+    display:block; font-family:'IBM Plex Mono',monospace; font-size:11px;
+    color:var(--ink-soft); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px;
+  }
+  .field input, .field select, .field textarea{
+    width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px;
+    font-family:'Inter',sans-serif; font-size:14px; background:var(--paper-dim);
+  }
+  .field.checkbox{ flex-direction:row; align-items:center; display:flex; gap:8px; }
+  .field.checkbox label{ margin:0; text-transform:none; font-size:13px; color:var(--ink); }
+
+  .form-actions{ display:flex; gap:10px; margin-top:6px; }
+  .btn{
+    padding:10px 18px; border-radius:8px; border:none; cursor:pointer;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px; letter-spacing:0.5px;
+  }
+  .btn-primary{ background:var(--stamp); color:#fff; }
+  .btn-secondary{ background:transparent; border:1px solid var(--line) !important; color:var(--ink-soft); }
+
+  table{ width:100%; border-collapse:collapse; background:#fff; border-radius:12px; overflow:hidden; border:1px solid var(--line); }
+  th, td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-size:13.5px; }
+  th{
+    font-family:'IBM Plex Mono',monospace; font-size:11px; text-transform:uppercase;
+    letter-spacing:0.5px; color:var(--ink-soft); background:var(--paper-dim);
+  }
+  tr:last-child td{ border-bottom:none; }
+  .row-actions{ display:flex; gap:6px; }
+  .row-actions button{
+    background:none; border:none; cursor:pointer; font-family:'IBM Plex Mono',monospace;
+    font-size:12px; text-decoration:underline; color:var(--ink-soft); padding:0;
+  }
+  .row-actions button.danger{ color:var(--stamp); }
+  .badge{
+    display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .badge.on{ background:#E4E9DB; color:var(--sage); }
+  .badge.off{ background:#F0DEDA; color:var(--stamp); }
+  .price{ font-family:'IBM Plex Mono',monospace; font-weight:600; }
+
+  .section-title{
+    font-family:'Fraunces',serif; font-size:19px; margin:24px 0 10px;
+  }
+  .empty{ color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:13px; padding:16px 0; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* =========================================================
+   CONFIGURAÇÃO — mesmos dados do cardápio e do painel
+========================================================= */
+const SUPABASE_URL = "https://xdcevntyknfuofktcjqh.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ni_JrSo3MM7i5aLM9hdKOw_pl7lkZcZ";
+/* ========================================================= */
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById("app");
+
+let categorias = [];
+let produtos = [];
+let abaAtiva = "produtos";
+let editandoCategoriaId = null;
+let editandoProdutoId = null;
+
+function formatBRL(v){ return Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
+
+/* ---------------- LOGIN ---------------- */
+function renderLogin(msg){
+  app.innerHTML = `
+    <div class="login-wrap">
+      <div class="login-box">
+        <div class="stamp">Administração</div>
+        <input type="email" id="loginEmail" placeholder="e-mail" autocomplete="username"/>
+        <input type="password" id="loginSenha" placeholder="senha" autocomplete="current-password"/>
+        <button id="loginBtn">ENTRAR</button>
+        <div class="login-error" id="loginError">${msg || ''}</div>
+      </div>
+    </div>`;
+  if (msg) document.getElementById("loginError").style.display = "block";
+  document.getElementById("loginBtn").addEventListener("click", doLogin);
+  document.getElementById("loginSenha").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+}
+
+async function doLogin(){
+  const email = document.getElementById("loginEmail").value.trim();
+  const senha = document.getElementById("loginSenha").value;
+  const { error } = await sb.auth.signInWithPassword({ email, password: senha });
+  if (error){ renderLogin("E-mail ou senha incorretos."); return; }
+  init();
+}
+
+async function checkSession(){
+  const { data } = await sb.auth.getSession();
+  if (data.session) init(); else renderLogin();
+}
+
+/* ---------------- CARREGAR DADOS ---------------- */
+async function carregarDados(){
+  const [{ data: catData }, { data: prodData }] = await Promise.all([
+    sb.from("categorias").select("*").order("ordem", { ascending:true }),
+    sb.from("produtos").select("*, categorias(nome)").order("ordem", { ascending:true })
+  ]);
+  categorias = catData || [];
+  produtos = prodData || [];
+}
+
+async function init(){
+  await carregarDados();
+  render();
+}
+
+/* ---------------- RENDER GERAL ---------------- */
+function render(){
+  app.innerHTML = `
+    <div class="topbar">
+      <div class="stamp">Administração do Cardápio</div>
+      <button class="logout-btn" id="logoutBtn">sair</button>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn ${abaAtiva === 'produtos' ? 'active' : ''}" data-tab="produtos">Produtos</button>
+      <button class="tab-btn ${abaAtiva === 'categorias' ? 'active' : ''}" data-tab="categorias">Categorias</button>
+    </div>
+    <div class="content"><div class="content-inner" id="contentInner"></div></div>
+  `;
+  document.getElementById("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); renderLogin(); });
+  document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => { abaAtiva = b.dataset.tab; render(); }));
+
+  if (abaAtiva === "produtos") renderProdutos(); else renderCategorias();
+}
+
+/* ---------------- CATEGORIAS ---------------- */
+function renderCategorias(){
+  const editando = categorias.find(c => c.id === editandoCategoriaId);
+  const el = document.getElementById("contentInner");
+  el.innerHTML = `
+    <div class="form-card">
+      <h3>${editando ? 'Editar categoria' : 'Nova categoria'}</h3>
+      <div class="form-row">
+        <div class="field"><label>Nome</label><input id="catNome" value="${editando?.nome || ''}" placeholder="Ex: Sobremesas"/></div>
+        <div class="field" style="max-width:120px"><label>Ordem</label><input id="catOrdem" type="number" value="${editando?.ordem ?? categorias.length}"/></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarCatBtn">${editando ? 'Salvar alterações' : 'Adicionar categoria'}</button>
+        ${editando ? '<button class="btn btn-secondary" id="cancelarCatBtn">Cancelar</button>' : ''}
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Nome</th><th>Ordem</th><th></th></tr></thead>
+      <tbody>
+        ${categorias.length === 0 ? `<tr><td colspan="3" class="empty">Nenhuma categoria cadastrada ainda.</td></tr>` : categorias.map(c => `
+          <tr>
+            <td>${c.nome}</td>
+            <td>${c.ordem}</td>
+            <td class="row-actions">
+              <button data-edit-cat="${c.id}">editar</button>
+              <button class="danger" data-del-cat="${c.id}">excluir</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  document.getElementById("salvarCatBtn").addEventListener("click", salvarCategoria);
+  document.getElementById("cancelarCatBtn")?.addEventListener("click", () => { editandoCategoriaId = null; renderCategorias(); });
+  el.querySelectorAll("[data-edit-cat]").forEach(b => b.addEventListener("click", () => { editandoCategoriaId = b.dataset.editCat; renderCategorias(); }));
+  el.querySelectorAll("[data-del-cat]").forEach(b => b.addEventListener("click", () => excluirCategoria(b.dataset.delCat)));
+}
+
+async function salvarCategoria(){
+  const nome = document.getElementById("catNome").value.trim();
+  const ordem = parseInt(document.getElementById("catOrdem").value) || 0;
+  if (!nome) return alert("Digite o nome da categoria.");
+
+  if (editandoCategoriaId){
+    const { error } = await sb.from("categorias").update({ nome, ordem }).eq("id", editandoCategoriaId);
+    if (error) return alert("Erro ao salvar: " + error.message);
+  } else {
+    const { error } = await sb.from("categorias").insert({ nome, ordem });
+    if (error) return alert("Erro ao adicionar: " + error.message);
+  }
+  editandoCategoriaId = null;
+  await carregarDados();
+  renderCategorias();
+}
+
+async function excluirCategoria(id){
+  if (!confirm("Excluir esta categoria? Produtos dela ficarão sem categoria.")) return;
+  const { error } = await sb.from("categorias").delete().eq("id", id);
+  if (error) return alert("Erro ao excluir: " + error.message);
+  await carregarDados();
+  renderCategorias();
+}
+
+/* ---------------- PRODUTOS ---------------- */
+function renderProdutos(){
+  const editando = produtos.find(p => p.id === editandoProdutoId);
+  const el = document.getElementById("contentInner");
+
+  if (categorias.length === 0){
+    el.innerHTML = `<div class="empty">Cadastre pelo menos uma categoria antes de adicionar produtos (aba "Categorias").</div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="form-card">
+      <h3>${editando ? 'Editar produto' : 'Novo produto'}</h3>
+      <div class="form-row">
+        <div class="field"><label>Nome</label><input id="prodNome" value="${editando?.nome || ''}" placeholder="Ex: Frango à Parmegiana"/></div>
+        <div class="field"><label>Categoria</label>
+          <select id="prodCategoria">
+            ${categorias.map(c => `<option value="${c.id}" ${editando?.categoria_id === c.id ? 'selected' : ''}>${c.nome}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Descrição</label><input id="prodDesc" value="${editando?.descricao || ''}" placeholder="Ex: Acompanha arroz e fritas"/></div>
+        <div class="field" style="max-width:140px"><label>Preço (R$)</label><input id="prodPreco" type="number" step="0.01" value="${editando?.preco ?? ''}" placeholder="0.00"/></div>
+        <div class="field" style="max-width:90px"><label>Ordem</label><input id="prodOrdem" type="number" value="${editando?.ordem ?? 0}"/></div>
+      </div>
+      <div class="form-row">
+        <div class="field checkbox">
+          <input type="checkbox" id="prodDisponivel" ${editando ? (editando.disponivel ? 'checked' : '') : 'checked'}/>
+          <label for="prodDisponivel">Disponível no cardápio</label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarProdBtn">${editando ? 'Salvar alterações' : 'Adicionar produto'}</button>
+        ${editando ? '<button class="btn btn-secondary" id="cancelarProdBtn">Cancelar</button>' : ''}
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Nome</th><th>Categoria</th><th>Preço</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${produtos.length === 0 ? `<tr><td colspan="5" class="empty">Nenhum produto cadastrado ainda.</td></tr>` : produtos.map(p => `
+          <tr>
+            <td>${p.nome}</td>
+            <td>${p.categorias?.nome || '—'}</td>
+            <td class="price">${formatBRL(p.preco)}</td>
+            <td><span class="badge ${p.disponivel ? 'on' : 'off'}">${p.disponivel ? 'disponível' : 'indisponível'}</span></td>
+            <td class="row-actions">
+              <button data-edit-prod="${p.id}">editar</button>
+              <button data-toggle-prod="${p.id}" data-atual="${p.disponivel}">${p.disponivel ? 'desativar' : 'ativar'}</button>
+              <button class="danger" data-del-prod="${p.id}">excluir</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  document.getElementById("salvarProdBtn").addEventListener("click", salvarProduto);
+  document.getElementById("cancelarProdBtn")?.addEventListener("click", () => { editandoProdutoId = null; renderProdutos(); });
+  el.querySelectorAll("[data-edit-prod]").forEach(b => b.addEventListener("click", () => { editandoProdutoId = b.dataset.editProd; renderProdutos(); }));
+  el.querySelectorAll("[data-del-prod]").forEach(b => b.addEventListener("click", () => excluirProduto(b.dataset.delProd)));
+  el.querySelectorAll("[data-toggle-prod]").forEach(b => b.addEventListener("click", () => toggleDisponivel(b.dataset.toggleProd, b.dataset.atual === 'true')));
+}
+
+async function salvarProduto(){
+  const nome = document.getElementById("prodNome").value.trim();
+  const categoria_id = document.getElementById("prodCategoria").value;
+  const descricao = document.getElementById("prodDesc").value.trim();
+  const preco = parseFloat(document.getElementById("prodPreco").value);
+  const ordem = parseInt(document.getElementById("prodOrdem").value) || 0;
+  const disponivel = document.getElementById("prodDisponivel").checked;
+
+  if (!nome) return alert("Digite o nome do produto.");
+  if (isNaN(preco) || preco < 0) return alert("Digite um preço válido.");
+
+  const payload = { nome, categoria_id, descricao, preco, ordem, disponivel };
+
+  if (editandoProdutoId){
+    const { error } = await sb.from("produtos").update(payload).eq("id", editandoProdutoId);
+    if (error) return alert("Erro ao salvar: " + error.message);
+  } else {
+    const { error } = await sb.from("produtos").insert(payload);
+    if (error) return alert("Erro ao adicionar: " + error.message);
+  }
+  editandoProdutoId = null;
+  await carregarDados();
+  renderProdutos();
+}
+
+async function excluirProduto(id){
+  if (!confirm("Excluir este produto?")) return;
+  const { error } = await sb.from("produtos").delete().eq("id", id);
+  if (error) return alert("Erro ao excluir: " + error.message);
+  await carregarDados();
+  renderProdutos();
+}
+
+async function toggleDisponivel(id, atual){
+  const { error } = await sb.from("produtos").update({ disponivel: !atual }).eq("id", id);
+  if (error) return alert("Erro: " + error.message);
+  await carregarDados();
+  renderProdutos();
+}
+
+checkSession();
+</script>
+</body>
+</html>
