@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<title>Cardápio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --paper:#FAF6EC;
+    --paper-dim:#F1EADA;
+    --ink:#211F1B;
+    --ink-soft:#5B564C;
+    --bg:#181714;
+    --stamp:#B4392C;
+    --sage:#6E7A56;
+    --line:#D8CFBB;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+    padding-bottom:120px;
+  }
+  .wrap{ max-width:640px; margin:0 auto; padding:0 16px; }
+
+  /* HERO: carimbo do restaurante */
+  .hero{
+    padding:36px 16px 28px;
+    text-align:center;
+    color:var(--paper);
+  }
+  .stamp{
+    display:inline-block;
+    border:3px solid var(--paper);
+    border-radius:6px;
+    padding:14px 26px;
+    transform:rotate(-3deg);
+    font-family:'Fraunces',serif;
+    font-weight:700;
+    font-size:28px;
+    letter-spacing:0.5px;
+  }
+  .hero .mesa-tag{
+    margin-top:18px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    letter-spacing:2px;
+    color:#B8B2A2;
+  }
+  .hero .mesa-num{
+    color:var(--paper);
+    font-weight:600;
+  }
+
+  /* CATEGORIAS - tabs */
+  .cat-tabs{
+    display:flex; gap:8px; overflow-x:auto;
+    padding:4px 16px 16px;
+    scrollbar-width:none;
+  }
+  .cat-tabs::-webkit-scrollbar{display:none;}
+  .cat-tab{
+    flex:0 0 auto;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    letter-spacing:0.5px;
+    text-transform:uppercase;
+    color:var(--paper);
+    border:1px solid #4A473E;
+    background:transparent;
+    padding:8px 14px;
+    border-radius:999px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .cat-tab.active{
+    background:var(--sage);
+    border-color:var(--sage);
+    color:var(--paper);
+  }
+
+  /* CARD DO CARDAPIO - papel */
+  .paper-panel{
+    background:var(--paper);
+    border-radius:14px 14px 0 0;
+    padding:8px 0 24px;
+  }
+  .cat-section{ padding:22px 20px 4px; }
+  .cat-title{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:21px;
+    margin-bottom:4px;
+  }
+  .cat-divider{
+    border:none;
+    border-top:2px dashed var(--line);
+    margin:10px 0 4px;
+  }
+
+  .produto{
+    display:flex;
+    justify-content:space-between;
+    gap:14px;
+    padding:16px 0;
+    border-bottom:1px dashed var(--line);
+  }
+  .produto:last-child{ border-bottom:none; }
+  .produto-info{ flex:1; }
+  .produto-nome{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:17px;
+    margin-bottom:3px;
+  }
+  .produto-desc{
+    font-size:13.5px;
+    color:var(--ink-soft);
+    line-height:1.4;
+  }
+  .produto-preco{
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:600;
+    font-size:15px;
+    color:var(--stamp);
+    margin-top:8px;
+  }
+  .produto-add{
+    align-self:center;
+    width:36px; height:36px;
+    border-radius:50%;
+    border:1.5px solid var(--stamp);
+    color:var(--stamp);
+    background:transparent;
+    font-size:20px;
+    line-height:1;
+    cursor:pointer;
+    flex:0 0 auto;
+  }
+  .produto-add:active{ transform:scale(0.92); }
+
+  .qty-control{
+    display:flex; align-items:center; gap:10px;
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:600;
+  }
+  .qty-control button{
+    width:30px; height:30px;
+    border-radius:50%;
+    border:1.5px solid var(--stamp);
+    color:var(--stamp);
+    background:transparent;
+    font-size:16px;
+    cursor:pointer;
+  }
+
+  /* CARRINHO - estilo ticket térmico */
+  .cart-tab{
+    position:fixed; left:0; right:0; bottom:0;
+    max-width:640px; margin:0 auto;
+    background:var(--stamp);
+    color:var(--paper);
+    padding:16px 20px;
+    display:flex; justify-content:space-between; align-items:center;
+    border-radius:14px 14px 0 0;
+    cursor:pointer;
+    box-shadow:0 -6px 20px rgba(0,0,0,0.35);
+  }
+  .cart-tab.hidden{ display:none; }
+  .cart-tab-left{ font-family:'IBM Plex Mono',monospace; font-size:14px; }
+  .cart-tab-count{ font-weight:700; }
+  .cart-tab-total{ font-family:'Fraunces',serif; font-weight:700; font-size:19px; }
+
+  .drawer-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.55);
+    display:none; z-index:20;
+  }
+  .drawer-overlay.open{ display:block; }
+
+  .receipt{
+    position:fixed; left:0; right:0; bottom:0;
+    max-width:640px; margin:0 auto;
+    background:var(--paper);
+    z-index:21;
+    transform:translateY(100%);
+    transition:transform 0.28s ease;
+    max-height:82vh;
+    display:flex; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom, 0);
+  }
+  .receipt.open{ transform:translateY(0); }
+  .receipt-serrated{
+    height:12px;
+    background:
+      radial-gradient(circle at 8px 0, transparent 8px, var(--paper) 8.5px) repeat-x;
+    background-size:16px 12px;
+  }
+  .receipt-head{
+    font-family:'IBM Plex Mono',monospace;
+    text-align:center;
+    padding:6px 20px 10px;
+    border-bottom:2px dashed var(--line);
+  }
+  .receipt-head .t1{ font-weight:700; letter-spacing:2px; font-size:13px; }
+  .receipt-head .t2{ font-size:11.5px; color:var(--ink-soft); margin-top:3px; }
+
+  .receipt-items{ overflow-y:auto; padding:12px 20px; flex:1; }
+  .receipt-item{
+    display:flex; justify-content:space-between; gap:10px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13.5px;
+    padding:9px 0;
+    border-bottom:1px dotted var(--line);
+  }
+  .receipt-item-name{ flex:1; }
+  .receipt-item-obs{
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    color:var(--ink-soft);
+    margin-top:3px;
+  }
+  .receipt-item-obs input{
+    width:100%;
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:5px 8px;
+    margin-top:4px;
+    background:#fff;
+  }
+  .receipt-remove{
+    background:none; border:none; color:var(--ink-soft);
+    font-size:12px; text-decoration:underline; cursor:pointer;
+    margin-top:4px;
+  }
+
+  .receipt-empty{
+    text-align:center; padding:40px 20px; color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace; font-size:13px;
+  }
+
+  .receipt-total{
+    display:flex; justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:700; font-size:16px;
+    padding:14px 20px 4px;
+    border-top:2px dashed var(--line);
+  }
+
+  .receipt-footer{ padding:14px 20px 18px; }
+  .btn-send{
+    width:100%;
+    background:var(--stamp);
+    color:var(--paper);
+    border:none;
+    padding:15px;
+    border-radius:10px;
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:700;
+    letter-spacing:1px;
+    font-size:14px;
+    cursor:pointer;
+  }
+  .btn-send:disabled{ opacity:0.5; }
+  .btn-close-drawer{
+    display:block; margin:0 auto 8px; background:none; border:none;
+    color:var(--ink-soft); font-size:12px; cursor:pointer;
+  }
+
+  .toast{
+    position:fixed; top:16px; left:50%; transform:translateX(-50%);
+    background:var(--sage); color:var(--paper);
+    padding:12px 20px; border-radius:10px;
+    font-family:'IBM Plex Mono',monospace; font-size:13px;
+    z-index:40; display:none;
+    max-width:90%; text-align:center;
+  }
+
+  .state-msg{
+    color:var(--paper); text-align:center; padding:60px 20px;
+    font-family:'IBM Plex Mono',monospace; font-size:14px; line-height:1.6;
+  }
+
+  .confirm-screen{
+    max-width:640px; margin:60px auto; text-align:center; padding:0 24px;
+    color:var(--paper);
+  }
+  .confirm-screen .stamp{ margin-bottom:22px; }
+  .confirm-screen p{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:#B8B2A2; line-height:1.7; }
+  .btn-outline{
+    margin-top:26px;
+    background:transparent; border:1.5px solid var(--paper);
+    color:var(--paper); padding:12px 22px; border-radius:10px;
+    font-family:'IBM Plex Mono',monospace; font-size:13px; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="state-msg">Carregando cardápio…</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* =========================================================
+   CONFIGURAÇÃO — troque pelos dados do SEU projeto Supabase
+   (Supabase > Project Settings > API)
+========================================================= */
+const SUPABASE_URL = "https://ynsbnctqjbqhbdwzlojn.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_bnW3K4VaC307x3klGKZ7tw_lVk-fJK8";
+/* ========================================================= */
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const app = document.getElementById("app");
+const toastEl = document.getElementById("toast");
+
+let mesa = null;          // { id, numero }
+let categorias = [];
+let produtos = [];
+let cart = [];             // { produto_id, nome, preco, quantidade, observacao }
+let activeCat = null;
+
+function getMesaNumero(){
+  const path = window.location.pathname; // ex: /mesa/5
+  const m = path.match(/mesa\/(\d+)/);
+  if (m) return parseInt(m[1], 10);
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("mesa")) return parseInt(params.get("mesa"), 10);
+  return null;
+}
+
+function showToast(msg){
+  toastEl.textContent = msg;
+  toastEl.style.display = "block";
+  setTimeout(() => toastEl.style.display = "none", 2600);
+}
+
+function formatBRL(v){
+  return v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+}
+
+async function init(){
+  const numero = getMesaNumero();
+  if (!numero){
+    app.innerHTML = `<div class="state-msg">Mesa não identificada.<br>Escaneie o QR Code que está na sua mesa.</div>`;
+    return;
+  }
+
+  const { data: mesaData, error: mesaErr } = await sb
+    .from("mesas")
+    .select("id, numero, ativa")
+    .eq("numero", numero)
+    .maybeSingle();
+
+  if (mesaErr || !mesaData || !mesaData.ativa){
+    app.innerHTML = `<div class="state-msg">Mesa ${numero} não encontrada ou inativa.<br>Chame um atendente.</div>`;
+    return;
+  }
+  mesa = mesaData;
+
+  const [{ data: catData }, { data: prodData }] = await Promise.all([
+    sb.from("categorias").select("*").order("ordem", { ascending:true }),
+    sb.from("produtos").select("*").eq("disponivel", true).order("ordem", { ascending:true })
+  ]);
+
+  categorias = catData || [];
+  produtos = prodData || [];
+  activeCat = categorias[0]?.id || null;
+
+  render();
+}
+
+function render(){
+  app.innerHTML = `
+    <div class="hero">
+      <div class="stamp">Cardápio</div>
+      <div class="mesa-tag">MESA Nº <span class="mesa-num">${String(mesa.numero).padStart(2,'0')}</span></div>
+    </div>
+
+    <div class="cat-tabs" id="catTabs">
+      ${categorias.map(c => `
+        <button class="cat-tab ${c.id === activeCat ? 'active' : ''}" data-cat="${c.id}">${c.nome}</button>
+      `).join('')}
+    </div>
+
+    <div class="paper-panel">
+      ${categorias.filter(c => c.id === activeCat).map(cat => `
+        <div class="cat-section">
+          <div class="cat-title">${cat.nome}</div>
+          <hr class="cat-divider"/>
+        </div>
+        ${produtos.filter(p => p.categoria_id === cat.id).map(renderProduto).join('') || `
+          <div style="padding:0 20px 20px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:13px;">
+            Sem itens nesta categoria no momento.
+          </div>`}
+      `).join('')}
+    </div>
+
+    <div class="cart-tab ${cart.length === 0 ? 'hidden' : ''}" id="cartTab">
+      <div class="cart-tab-left">
+        <span class="cart-tab-count">${cartCount()}</span> item(ns)
+      </div>
+      <div class="cart-tab-total">${formatBRL(cartTotal())}</div>
+    </div>
+
+    <div class="drawer-overlay" id="overlay"></div>
+    <div class="receipt" id="receipt">
+      <div class="receipt-serrated"></div>
+      <div class="receipt-head">
+        <button class="btn-close-drawer" id="closeDrawer">fechar ▾</button>
+        <div class="t1">SEU PEDIDO</div>
+        <div class="t2">MESA ${String(mesa.numero).padStart(2,'0')}</div>
+      </div>
+      <div class="receipt-items" id="receiptItems"></div>
+      <div class="receipt-total">
+        <span>TOTAL</span><span>${formatBRL(cartTotal())}</span>
+      </div>
+      <div class="receipt-footer">
+        <button class="btn-send" id="sendBtn" ${cart.length === 0 ? 'disabled' : ''}>ENVIAR PEDIDO PARA A COZINHA</button>
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll(".cat-tab").forEach(btn => {
+    btn.addEventListener("click", () => { activeCat = btn.dataset.cat; render(); });
+  });
+  document.querySelectorAll(".produto-add").forEach(btn => {
+    btn.addEventListener("click", () => addToCart(btn.dataset.prod));
+  });
+  document.querySelectorAll(".qty-btn").forEach(btn => {
+    btn.addEventListener("click", () => changeQty(btn.dataset.prod, parseInt(btn.dataset.delta)));
+  });
+
+  document.getElementById("cartTab")?.addEventListener("click", openDrawer);
+  document.getElementById("overlay")?.addEventListener("click", closeDrawer);
+  document.getElementById("closeDrawer")?.addEventListener("click", closeDrawer);
+  document.getElementById("sendBtn")?.addEventListener("click", enviarPedido);
+
+  renderReceiptItems();
+}
+
+function renderProduto(p){
+  const inCart = cart.find(i => i.produto_id === p.id);
+  return `
+    <div class="produto">
+      <div class="produto-info">
+        <div class="produto-nome">${p.nome}</div>
+        ${p.descricao ? `<div class="produto-desc">${p.descricao}</div>` : ''}
+        <div class="produto-preco">${formatBRL(Number(p.preco))}</div>
+      </div>
+      ${inCart ? `
+        <div class="qty-control">
+          <button class="qty-btn" data-prod="${p.id}" data-delta="-1">–</button>
+          <span>${inCart.quantidade}</span>
+          <button class="qty-btn" data-prod="${p.id}" data-delta="1">+</button>
+        </div>
+      ` : `
+        <button class="produto-add" data-prod="${p.id}">+</button>
+      `}
+    </div>
+  `;
+}
+
+function addToCart(produtoId){
+  const p = produtos.find(x => x.id === produtoId);
+  if (!p) return;
+  const existing = cart.find(i => i.produto_id === produtoId);
+  if (existing){ existing.quantidade += 1; }
+  else { cart.push({ produto_id:p.id, nome:p.nome, preco:Number(p.preco), quantidade:1, observacao:"" }); }
+  render();
+}
+
+function changeQty(produtoId, delta){
+  const item = cart.find(i => i.produto_id === produtoId);
+  if (!item) return;
+  item.quantidade += delta;
+  if (item.quantidade <= 0) cart = cart.filter(i => i.produto_id !== produtoId);
+  render();
+}
+
+function cartCount(){ return cart.reduce((s,i) => s + i.quantidade, 0); }
+function cartTotal(){ return cart.reduce((s,i) => s + i.quantidade * i.preco, 0); }
+
+function openDrawer(){
+  document.getElementById("overlay").classList.add("open");
+  document.getElementById("receipt").classList.add("open");
+}
+function closeDrawer(){
+  document.getElementById("overlay").classList.remove("open");
+  document.getElementById("receipt").classList.remove("open");
+}
+
+function renderReceiptItems(){
+  const el = document.getElementById("receiptItems");
+  if (!el) return;
+  if (cart.length === 0){
+    el.innerHTML = `<div class="receipt-empty">Seu ticket está vazio.<br>Toque em "+" nos itens do cardápio.</div>`;
+    return;
+  }
+  el.innerHTML = cart.map(i => `
+    <div class="receipt-item">
+      <div class="receipt-item-name">
+        ${i.quantidade}x ${i.nome}
+        <div class="receipt-item-obs">
+          <input type="text" placeholder="observação (ex: sem cebola)" data-obs="${i.produto_id}" value="${i.observacao}"/>
+        </div>
+        <button class="receipt-remove" data-remove="${i.produto_id}">remover</button>
+      </div>
+      <div>${formatBRL(i.quantidade * i.preco)}</div>
+    </div>
+  `).join('');
+
+  el.querySelectorAll("[data-obs]").forEach(inp => {
+    inp.addEventListener("input", () => {
+      const item = cart.find(i => i.produto_id === inp.dataset.obs);
+      if (item) item.observacao = inp.value;
+    });
+  });
+  el.querySelectorAll("[data-remove]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      cart = cart.filter(i => i.produto_id !== btn.dataset.remove);
+      render();
+      openDrawer();
+    });
+  });
+}
+
+async function enviarPedido(){
+  if (cart.length === 0) return;
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+  sendBtn.textContent = "ENVIANDO...";
+
+  try{
+    const { data: pedido, error: pedidoErr } = await sb
+      .from("pedidos")
+      .insert({ mesa_id: mesa.id, total: cartTotal(), status: "novo" })
+      .select()
+      .single();
+
+    if (pedidoErr) throw pedidoErr;
+
+    const itens = cart.map(i => ({
+      pedido_id: pedido.id,
+      produto_id: i.produto_id,
+      nome_produto: i.nome,
+      quantidade: i.quantidade,
+      preco_unitario: i.preco,
+      observacao: i.observacao || null
+    }));
+
+    const { error: itensErr } = await sb.from("itens_pedido").insert(itens);
+    if (itensErr) throw itensErr;
+
+    cart = [];
+    closeDrawer();
+    showConfirmScreen();
+  } catch(err){
+    console.error(err);
+    showToast("Não foi possível enviar o pedido. Tente novamente.");
+    sendBtn.disabled = false;
+    sendBtn.textContent = "ENVIAR PEDIDO PARA A COZINHA";
+  }
+}
+
+function showConfirmScreen(){
+  app.innerHTML = `
+    <div class="confirm-screen">
+      <div class="stamp">Pedido enviado!</div>
+      <p>Sua comanda já foi impressa na cozinha.<br>Fique atento, seu pedido está a caminho.</p>
+      <button class="btn-outline" id="novoPedidoBtn">Fazer outro pedido</button>
+    </div>
+  `;
+  document.getElementById("novoPedidoBtn").addEventListener("click", render);
+}
+
+init();
+</script>
+</body>
+</html>
