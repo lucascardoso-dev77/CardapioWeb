@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   :root{
     --paper:#FAF6EC;
@@ -119,6 +120,24 @@
     font-family:'Fraunces',serif; font-size:19px; margin:24px 0 10px;
   }
   .empty{ color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:13px; padding:16px 0; }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6);
+    display:none; align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modal-overlay.open{ display:flex; }
+  .modal-box{
+    background:#fff; border-radius:14px; padding:28px; text-align:center;
+    max-width:320px; width:100%;
+  }
+  .modal-box h3{ font-family:'Fraunces',serif; font-size:18px; margin-bottom:4px; }
+  .modal-box .modal-link{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft);
+    word-break:break-all; margin-bottom:14px;
+  }
+  .modal-box canvas{ margin:0 auto 16px; }
+  .modal-actions{ display:flex; gap:8px; }
+  .modal-actions .btn{ flex:1; }
 </style>
 </head>
 <body>
@@ -137,9 +156,12 @@ const app = document.getElementById("app");
 
 let categorias = [];
 let produtos = [];
+let mesas = [];
 let abaAtiva = "produtos";
 let editandoCategoriaId = null;
 let editandoProdutoId = null;
+let editandoMesaId = null;
+let arquivoImagemSelecionado = null;
 
 function formatBRL(v){ return Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' }); }
 
@@ -175,12 +197,14 @@ async function checkSession(){
 
 /* ---------------- CARREGAR DADOS ---------------- */
 async function carregarDados(){
-  const [{ data: catData }, { data: prodData }] = await Promise.all([
+  const [{ data: catData }, { data: prodData }, { data: mesaData }] = await Promise.all([
     sb.from("categorias").select("*").order("ordem", { ascending:true }),
-    sb.from("produtos").select("*, categorias(nome)").order("ordem", { ascending:true })
+    sb.from("produtos").select("*, categorias(nome)").order("ordem", { ascending:true }),
+    sb.from("mesas").select("*").order("numero", { ascending:true })
   ]);
   categorias = catData || [];
   produtos = prodData || [];
+  mesas = mesaData || [];
 }
 
 async function init(){
@@ -198,13 +222,16 @@ function render(){
     <div class="tabs">
       <button class="tab-btn ${abaAtiva === 'produtos' ? 'active' : ''}" data-tab="produtos">Produtos</button>
       <button class="tab-btn ${abaAtiva === 'categorias' ? 'active' : ''}" data-tab="categorias">Categorias</button>
+      <button class="tab-btn ${abaAtiva === 'mesas' ? 'active' : ''}" data-tab="mesas">Mesas</button>
     </div>
     <div class="content"><div class="content-inner" id="contentInner"></div></div>
   `;
   document.getElementById("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); renderLogin(); });
   document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => { abaAtiva = b.dataset.tab; render(); }));
 
-  if (abaAtiva === "produtos") renderProdutos(); else renderCategorias();
+  if (abaAtiva === "produtos") renderProdutos();
+  else if (abaAtiva === "categorias") renderCategorias();
+  else renderMesas();
 }
 
 /* ---------------- CATEGORIAS ---------------- */
@@ -304,6 +331,15 @@ function renderProdutos(){
           <label for="prodDisponivel">Disponível no cardápio</label>
         </div>
       </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Foto do produto</label>
+          <input type="file" id="prodImagem" accept="image/*"/>
+          <div id="imagemPreviewWrap" style="margin-top:8px;">
+            ${editando?.imagem_url ? `<img src="${editando.imagem_url}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);"/>` : ''}
+          </div>
+        </div>
+      </div>
       <div class="form-actions">
         <button class="btn btn-primary" id="salvarProdBtn">${editando ? 'Salvar alterações' : 'Adicionar produto'}</button>
         ${editando ? '<button class="btn btn-secondary" id="cancelarProdBtn">Cancelar</button>' : ''}
@@ -311,10 +347,11 @@ function renderProdutos(){
     </div>
 
     <table>
-      <thead><tr><th>Nome</th><th>Categoria</th><th>Preço</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Nome</th><th>Categoria</th><th>Preço</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${produtos.length === 0 ? `<tr><td colspan="5" class="empty">Nenhum produto cadastrado ainda.</td></tr>` : produtos.map(p => `
+        ${produtos.length === 0 ? `<tr><td colspan="6" class="empty">Nenhum produto cadastrado ainda.</td></tr>` : produtos.map(p => `
           <tr>
+            <td>${p.imagem_url ? `<img src="${p.imagem_url}" style="width:38px;height:38px;object-fit:cover;border-radius:6px;"/>` : '—'}</td>
             <td>${p.nome}</td>
             <td>${p.categorias?.nome || '—'}</td>
             <td class="price">${formatBRL(p.preco)}</td>
@@ -330,11 +367,27 @@ function renderProdutos(){
     </table>
   `;
 
+  document.getElementById("prodImagem").addEventListener("change", (e) => {
+    arquivoImagemSelecionado = e.target.files[0] || null;
+    if (arquivoImagemSelecionado){
+      const url = URL.createObjectURL(arquivoImagemSelecionado);
+      document.getElementById("imagemPreviewWrap").innerHTML = `<img src="${url}" style="width:90px;height:90px;object-fit:cover;border-radius:8px;border:1px solid var(--line);"/>`;
+    }
+  });
   document.getElementById("salvarProdBtn").addEventListener("click", salvarProduto);
-  document.getElementById("cancelarProdBtn")?.addEventListener("click", () => { editandoProdutoId = null; renderProdutos(); });
-  el.querySelectorAll("[data-edit-prod]").forEach(b => b.addEventListener("click", () => { editandoProdutoId = b.dataset.editProd; renderProdutos(); }));
+  document.getElementById("cancelarProdBtn")?.addEventListener("click", () => { editandoProdutoId = null; arquivoImagemSelecionado = null; renderProdutos(); });
+  el.querySelectorAll("[data-edit-prod]").forEach(b => b.addEventListener("click", () => { editandoProdutoId = b.dataset.editProd; arquivoImagemSelecionado = null; renderProdutos(); }));
   el.querySelectorAll("[data-del-prod]").forEach(b => b.addEventListener("click", () => excluirProduto(b.dataset.delProd)));
   el.querySelectorAll("[data-toggle-prod]").forEach(b => b.addEventListener("click", () => toggleDisponivel(b.dataset.toggleProd, b.dataset.atual === 'true')));
+}
+
+async function uploadImagemProduto(file){
+  const extensao = file.name.split('.').pop();
+  const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extensao}`;
+  const { error: uploadError } = await sb.storage.from('produtos').upload(nomeArquivo, file, { upsert: false });
+  if (uploadError){ alert("Erro ao enviar imagem: " + uploadError.message); return null; }
+  const { data } = sb.storage.from('produtos').getPublicUrl(nomeArquivo);
+  return data.publicUrl;
 }
 
 async function salvarProduto(){
@@ -348,16 +401,29 @@ async function salvarProduto(){
   if (!nome) return alert("Digite o nome do produto.");
   if (isNaN(preco) || preco < 0) return alert("Digite um preço válido.");
 
-  const payload = { nome, categoria_id, descricao, preco, ordem, disponivel };
+  const btn = document.getElementById("salvarProdBtn");
+  btn.disabled = true;
+  const textoOriginal = btn.textContent;
+
+  let imagem_url = editandoProdutoId ? (produtos.find(p => p.id === editandoProdutoId)?.imagem_url || null) : null;
+  if (arquivoImagemSelecionado){
+    btn.textContent = "Enviando imagem...";
+    const url = await uploadImagemProduto(arquivoImagemSelecionado);
+    if (url) imagem_url = url;
+  }
+
+  const payload = { nome, categoria_id, descricao, preco, ordem, disponivel, imagem_url };
+  btn.textContent = "Salvando...";
 
   if (editandoProdutoId){
     const { error } = await sb.from("produtos").update(payload).eq("id", editandoProdutoId);
-    if (error) return alert("Erro ao salvar: " + error.message);
+    if (error){ btn.disabled = false; btn.textContent = textoOriginal; return alert("Erro ao salvar: " + error.message); }
   } else {
     const { error } = await sb.from("produtos").insert(payload);
-    if (error) return alert("Erro ao adicionar: " + error.message);
+    if (error){ btn.disabled = false; btn.textContent = textoOriginal; return alert("Erro ao adicionar: " + error.message); }
   }
   editandoProdutoId = null;
+  arquivoImagemSelecionado = null;
   await carregarDados();
   renderProdutos();
 }
@@ -375,6 +441,105 @@ async function toggleDisponivel(id, atual){
   if (error) return alert("Erro: " + error.message);
   await carregarDados();
   renderProdutos();
+}
+
+/* ---------------- MESAS ---------------- */
+function renderMesas(){
+  const editando = mesas.find(m => m.id === editandoMesaId);
+  const el = document.getElementById("contentInner");
+  el.innerHTML = `
+    <div class="form-card">
+      <h3>${editando ? 'Editar mesa' : 'Nova mesa'}</h3>
+      <div class="form-row">
+        <div class="field" style="max-width:160px"><label>Número da mesa</label><input id="mesaNumero" type="number" value="${editando?.numero ?? ''}" placeholder="Ex: 6"/></div>
+        <div class="field checkbox" style="align-self:flex-end; margin-bottom:10px;">
+          <input type="checkbox" id="mesaAtiva" ${editando ? (editando.ativa ? 'checked' : '') : 'checked'}/>
+          <label for="mesaAtiva">Mesa ativa</label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarMesaBtn">${editando ? 'Salvar alterações' : 'Adicionar mesa'}</button>
+        ${editando ? '<button class="btn btn-secondary" id="cancelarMesaBtn">Cancelar</button>' : ''}
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Número</th><th>Status</th><th>Link do QR Code</th><th></th></tr></thead>
+      <tbody>
+        ${mesas.length === 0 ? `<tr><td colspan="4" class="empty">Nenhuma mesa cadastrada ainda.</td></tr>` : mesas.map(m => `
+          <tr>
+            <td>MESA ${String(m.numero).padStart(2,'0')}</td>
+            <td><span class="badge ${m.ativa ? 'on' : 'off'}">${m.ativa ? 'ativa' : 'inativa'}</span></td>
+            <td style="font-family:'IBM Plex Mono',monospace; font-size:12px;">/mesa/${m.numero}</td>
+            <td class="row-actions">
+              <button data-qr-mesa="${m.numero}">ver QR code</button>
+              <button data-edit-mesa="${m.id}">editar</button>
+              <button class="danger" data-del-mesa="${m.id}">excluir</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div class="modal-overlay" id="qrModalOverlay">
+      <div class="modal-box">
+        <h3 id="qrModalTitulo">MESA</h3>
+        <div class="modal-link" id="qrModalLink"></div>
+        <canvas id="qrModalCanvas"></canvas>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="qrModalFechar">Fechar</button>
+          <button class="btn btn-primary" id="qrModalBaixar">Baixar PNG</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("salvarMesaBtn").addEventListener("click", salvarMesa);
+  document.getElementById("cancelarMesaBtn")?.addEventListener("click", () => { editandoMesaId = null; renderMesas(); });
+  el.querySelectorAll("[data-edit-mesa]").forEach(b => b.addEventListener("click", () => { editandoMesaId = b.dataset.editMesa; renderMesas(); }));
+  el.querySelectorAll("[data-del-mesa]").forEach(b => b.addEventListener("click", () => excluirMesa(b.dataset.delMesa)));
+  el.querySelectorAll("[data-qr-mesa]").forEach(b => b.addEventListener("click", () => mostrarQrMesa(b.dataset.qrMesa)));
+  document.getElementById("qrModalFechar").addEventListener("click", () => document.getElementById("qrModalOverlay").classList.remove("open"));
+}
+
+function mostrarQrMesa(numero){
+  const url = `${window.location.origin}/mesa/${numero}`;
+  document.getElementById("qrModalTitulo").textContent = `MESA ${String(numero).padStart(2,'0')}`;
+  document.getElementById("qrModalLink").textContent = url;
+  const canvas = document.getElementById("qrModalCanvas");
+  QRCode.toCanvas(canvas, url, { width: 200, margin: 1, color: { dark: "#211F1B", light: "#FAF6EC" } });
+  document.getElementById("qrModalOverlay").classList.add("open");
+
+  document.getElementById("qrModalBaixar").onclick = () => {
+    const link = document.createElement("a");
+    link.download = `qr-mesa-${numero}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  };
+}
+
+async function salvarMesa(){
+  const numero = parseInt(document.getElementById("mesaNumero").value);
+  const ativa = document.getElementById("mesaAtiva").checked;
+  if (!numero || numero <= 0) return alert("Digite um número de mesa válido.");
+
+  if (editandoMesaId){
+    const { error } = await sb.from("mesas").update({ numero, ativa }).eq("id", editandoMesaId);
+    if (error) return alert("Erro ao salvar: " + error.message);
+  } else {
+    const { error } = await sb.from("mesas").insert({ numero, ativa });
+    if (error) return alert("Erro ao adicionar (número já existe?): " + error.message);
+  }
+  editandoMesaId = null;
+  await carregarDados();
+  renderMesas();
+}
+
+async function excluirMesa(id){
+  if (!confirm("Excluir esta mesa? Pedidos antigos dela continuam salvos.")) return;
+  const { error } = await sb.from("mesas").delete().eq("id", id);
+  if (error) return alert("Erro ao excluir: " + error.message);
+  await carregarDados();
+  renderMesas();
 }
 
 checkSession();
