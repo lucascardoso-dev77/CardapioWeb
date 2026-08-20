@@ -90,54 +90,103 @@
     border-radius:14px 14px 0 0;
     padding:8px 0 24px;
   }
-  .cat-section{ padding:22px 20px 4px; }
+  .cat-section{ padding:26px 20px 12px; }
   .cat-title{
     font-family:'Fraunces',serif;
     font-weight:600;
-    font-size:21px;
-    margin-bottom:4px;
+    font-size:22px;
+    margin-bottom:2px;
+  }
+  .cat-subtitle{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    letter-spacing:1px;
+    text-transform:uppercase;
   }
   .cat-divider{
     border:none;
     border-top:2px dashed var(--line);
-    margin:10px 0 4px;
+    margin:12px 0 4px;
   }
 
-  .produto{
-    display:flex;
-    justify-content:space-between;
+  .produtos-grid{
+    display:grid;
+    grid-template-columns:1fr;
     gap:14px;
-    padding:16px 0;
-    border-bottom:1px dashed var(--line);
+    padding:6px 16px 8px;
   }
-  .produto:last-child{ border-bottom:none; }
-  .produto-info{ flex:1; }
+
+  .produto-card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:16px;
+    overflow:hidden;
+    display:flex;
+    box-shadow:0 2px 10px rgba(33,31,27,0.05);
+  }
+  .produto-card.sem-imagem{ background:var(--paper); }
+
+  .produto-img-wrap{
+    flex:0 0 112px;
+    position:relative;
+    background:var(--paper-dim);
+  }
+  .produto-img{
+    width:112px; height:100%; min-height:112px;
+    object-fit:cover; display:block;
+  }
+  .produto-img-placeholder{
+    width:112px; height:100%; min-height:112px;
+    display:flex; align-items:center; justify-content:center;
+    background:
+      repeating-linear-gradient(135deg, var(--paper-dim), var(--paper-dim) 8px, #EAE1CB 8px, #EAE1CB 16px);
+  }
+  .produto-img-placeholder span{
+    font-family:'Fraunces',serif; font-style:italic; color:var(--ink-soft);
+    font-size:12px; opacity:0.7; transform:rotate(-8deg);
+  }
+
+  .produto-body{
+    flex:1; padding:14px 14px 12px; display:flex; flex-direction:column;
+    min-width:0;
+  }
   .produto-nome{
     font-family:'Fraunces',serif;
     font-weight:600;
-    font-size:17px;
+    font-size:16.5px;
     margin-bottom:3px;
+    line-height:1.25;
   }
   .produto-desc{
-    font-size:13.5px;
+    font-size:13px;
     color:var(--ink-soft);
     line-height:1.4;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  .produto-footer{
+    margin-top:auto;
+    padding-top:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
   }
   .produto-preco{
     font-family:'IBM Plex Mono',monospace;
     font-weight:600;
     font-size:15px;
     color:var(--stamp);
-    margin-top:8px;
   }
   .produto-add{
-    align-self:center;
-    width:36px; height:36px;
+    width:32px; height:32px;
     border-radius:50%;
     border:1.5px solid var(--stamp);
     color:var(--stamp);
     background:transparent;
-    font-size:20px;
+    font-size:18px;
     line-height:1;
     cursor:pointer;
     flex:0 0 auto;
@@ -148,14 +197,17 @@
     display:flex; align-items:center; gap:10px;
     font-family:'IBM Plex Mono',monospace;
     font-weight:600;
+    background:var(--paper-dim);
+    border-radius:999px;
+    padding:3px 4px;
   }
   .qty-control button{
-    width:30px; height:30px;
+    width:26px; height:26px;
     border-radius:50%;
     border:1.5px solid var(--stamp);
     color:var(--stamp);
-    background:transparent;
-    font-size:16px;
+    background:#fff;
+    font-size:15px;
     cursor:pointer;
   }
 
@@ -396,12 +448,15 @@ function render(){
       ${categorias.filter(c => c.id === activeCat).map(cat => `
         <div class="cat-section">
           <div class="cat-title">${cat.nome}</div>
+          <div class="cat-subtitle">${produtos.filter(p => p.categoria_id === cat.id).length} ${produtos.filter(p => p.categoria_id === cat.id).length === 1 ? 'item' : 'itens'}</div>
           <hr class="cat-divider"/>
         </div>
-        ${produtos.filter(p => p.categoria_id === cat.id).map(renderProduto).join('') || `
-          <div style="padding:0 20px 20px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:13px;">
-            Sem itens nesta categoria no momento.
-          </div>`}
+        <div class="produtos-grid">
+          ${produtos.filter(p => p.categoria_id === cat.id).map(renderProduto).join('') || `
+            <div style="padding:0 0 20px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:13px;">
+              Sem itens nesta categoria no momento.
+            </div>`}
+        </div>
       `).join('')}
     </div>
 
@@ -451,21 +506,29 @@ function render(){
 function renderProduto(p){
   const inCart = cart.find(i => i.produto_id === p.id);
   return `
-    <div class="produto">
-      <div class="produto-info">
+    <div class="produto-card ${p.imagem_url ? '' : 'sem-imagem'}">
+      <div class="produto-img-wrap">
+        ${p.imagem_url
+          ? `<img src="${p.imagem_url}" class="produto-img" alt="${p.nome}"/>`
+          : `<div class="produto-img-placeholder"><span>sem foto</span></div>`
+        }
+      </div>
+      <div class="produto-body">
         <div class="produto-nome">${p.nome}</div>
         ${p.descricao ? `<div class="produto-desc">${p.descricao}</div>` : ''}
-        <div class="produto-preco">${formatBRL(Number(p.preco))}</div>
-      </div>
-      ${inCart ? `
-        <div class="qty-control">
-          <button class="qty-btn" data-prod="${p.id}" data-delta="-1">–</button>
-          <span>${inCart.quantidade}</span>
-          <button class="qty-btn" data-prod="${p.id}" data-delta="1">+</button>
+        <div class="produto-footer">
+          <div class="produto-preco">${formatBRL(Number(p.preco))}</div>
+          ${inCart ? `
+            <div class="qty-control">
+              <button class="qty-btn" data-prod="${p.id}" data-delta="-1">–</button>
+              <span>${inCart.quantidade}</span>
+              <button class="qty-btn" data-prod="${p.id}" data-delta="1">+</button>
+            </div>
+          ` : `
+            <button class="produto-add" data-prod="${p.id}">+</button>
+          `}
         </div>
-      ` : `
-        <button class="produto-add" data-prod="${p.id}">+</button>
-      `}
+      </div>
     </div>
   `;
 }
