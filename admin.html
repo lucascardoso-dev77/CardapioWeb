@@ -505,16 +505,35 @@ function mostrarQrMesa(numero){
   const url = `${window.location.origin}/mesa/${numero}`;
   document.getElementById("qrModalTitulo").textContent = `MESA ${String(numero).padStart(2,'0')}`;
   document.getElementById("qrModalLink").textContent = url;
-  const canvas = document.getElementById("qrModalCanvas");
-  QRCode.toCanvas(canvas, url, { width: 200, margin: 1, color: { dark: "#211F1B", light: "#FAF6EC" } });
-  document.getElementById("qrModalOverlay").classList.add("open");
+  document.getElementById("qrModalOverlay").classList.add("open"); // abre a janela ANTES de gerar o QR
 
-  document.getElementById("qrModalBaixar").onclick = () => {
-    const link = document.createElement("a");
-    link.download = `qr-mesa-${numero}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  };
+  const canvas = document.getElementById("qrModalCanvas");
+  const btnBaixar = document.getElementById("qrModalBaixar");
+
+  if (typeof QRCode === "undefined"){
+    canvas.replaceWith(Object.assign(document.createElement("div"), {
+      id: "qrModalCanvas",
+      style: "font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--stamp); padding:20px 0;",
+      textContent: "Não foi possível carregar a biblioteca de QR Code. Verifique sua conexão com a internet ou desative bloqueadores de anúncio/conteúdo e tente de novo."
+    }));
+    btnBaixar.style.display = "none";
+    return;
+  }
+  btnBaixar.style.display = "";
+
+  QRCode.toCanvas(canvas, url, { width: 200, margin: 1, color: { dark: "#211F1B", light: "#FAF6EC" } }, function (error) {
+    if (error){
+      console.error("Erro ao gerar QR Code:", error);
+      alert("Erro ao gerar o QR Code: " + error.message);
+      return;
+    }
+    btnBaixar.onclick = () => {
+      const link = document.createElement("a");
+      link.download = `qr-mesa-${numero}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    };
+  });
 }
 
 async function salvarMesa(){
