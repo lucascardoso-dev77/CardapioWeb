@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
   :root{
     --paper:#FAF6EC;
@@ -501,38 +500,69 @@ function renderMesas(){
   document.getElementById("qrModalFechar").addEventListener("click", () => document.getElementById("qrModalOverlay").classList.remove("open"));
 }
 
+function carregarBibliotecaQRCode(callback){
+  if (typeof QRCode !== "undefined") return callback(null);
+
+  const cdns = [
+    "https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js",
+    "https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js",
+    "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"
+  ];
+  let i = 0;
+
+  function tentarProximo(){
+    if (i >= cdns.length) { callback(new Error("Nenhum CDN respondeu")); return; }
+    const script = document.createElement("script");
+    script.src = cdns[i];
+    i++;
+    script.onload = () => callback(null);
+    script.onerror = () => tentarProximo();
+    document.head.appendChild(script);
+  }
+  tentarProximo();
+}
+
 function mostrarQrMesa(numero){
   const url = `${window.location.origin}/mesa/${numero}`;
   document.getElementById("qrModalTitulo").textContent = `MESA ${String(numero).padStart(2,'0')}`;
   document.getElementById("qrModalLink").textContent = url;
   document.getElementById("qrModalOverlay").classList.add("open"); // abre a janela ANTES de gerar o QR
 
-  const canvas = document.getElementById("qrModalCanvas");
+  const canvasWrap = document.getElementById("qrModalCanvas").parentElement;
   const btnBaixar = document.getElementById("qrModalBaixar");
+  btnBaixar.style.display = "none";
+  document.getElementById("qrModalCanvas").outerHTML = `<div id="qrModalCanvas" style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); padding:30px 0;">Gerando QR Code…</div>`;
 
-  if (typeof QRCode === "undefined"){
-    canvas.replaceWith(Object.assign(document.createElement("div"), {
-      id: "qrModalCanvas",
-      style: "font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--stamp); padding:20px 0;",
-      textContent: "Não foi possível carregar a biblioteca de QR Code. Verifique sua conexão com a internet ou desative bloqueadores de anúncio/conteúdo e tente de novo."
-    }));
-    btnBaixar.style.display = "none";
-    return;
-  }
-  btnBaixar.style.display = "";
-
-  QRCode.toCanvas(canvas, url, { width: 200, margin: 1, color: { dark: "#211F1B", light: "#FAF6EC" } }, function (error) {
-    if (error){
-      console.error("Erro ao gerar QR Code:", error);
-      alert("Erro ao gerar o QR Code: " + error.message);
+  carregarBibliotecaQRCode((erroCarregamento) => {
+    if (erroCarregamento){
+      document.getElementById("qrModalCanvas").innerHTML = `
+        <span style="color:var(--stamp);">Não foi possível carregar a biblioteca de QR Code pela internet.</span><br/><br/>
+        Enquanto isso, você pode copiar o link acima e gerar o QR Code em
+        <a href="https://www.qr-code-generator.com/" target="_blank" rel="noopener">qr-code-generator.com</a>
+        ou qualquer gerador de QR Code online, colando esse link.
+      `;
       return;
     }
-    btnBaixar.onclick = () => {
-      const link = document.createElement("a");
-      link.download = `qr-mesa-${numero}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-    };
+
+    // recria o canvas (o placeholder de texto substituiu o elemento anterior)
+    const canvasNovo = document.createElement("canvas");
+    canvasNovo.id = "qrModalCanvas";
+    document.getElementById("qrModalCanvas").replaceWith(canvasNovo);
+
+    QRCode.toCanvas(canvasNovo, url, { width: 200, margin: 1, color: { dark: "#211F1B", light: "#FAF6EC" } }, function (error) {
+      if (error){
+        console.error("Erro ao gerar QR Code:", error);
+        canvasNovo.outerHTML = `<div style="color:var(--stamp); font-family:'IBM Plex Mono',monospace; font-size:12px;">Erro ao gerar: ${error.message}</div>`;
+        return;
+      }
+      btnBaixar.style.display = "";
+      btnBaixar.onclick = () => {
+        const link = document.createElement("a");
+        link.download = `qr-mesa-${numero}.png`;
+        link.href = canvasNovo.toDataURL("image/png");
+        link.click();
+      };
+    });
   });
 }
 
