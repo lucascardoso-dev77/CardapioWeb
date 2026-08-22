@@ -80,6 +80,23 @@
     font-size:12px; cursor:pointer;
   }
 
+  /* CHAMADOS DE ATENDENTE */
+  .chamados-bar{
+    display:flex; flex-wrap:wrap; gap:10px; padding:12px 24px;
+    background:rgba(192,138,46,0.12); border-bottom:1px solid var(--line);
+  }
+  .chamado-chip{
+    display:flex; align-items:center; gap:10px;
+    background:var(--amber); color:#14140F; font-weight:700;
+    padding:8px 10px 8px 14px; border-radius:999px;
+    font-family:'IBM Plex Mono',monospace; font-size:12.5px;
+  }
+  .chamado-chip button{
+    background:#14140F; color:var(--paper); border:none;
+    padding:6px 12px; border-radius:999px; font-family:'IBM Plex Mono',monospace;
+    font-size:11px; font-weight:700; cursor:pointer;
+  }
+
   /* BOARD */
   .board{
     display:grid;
@@ -173,7 +190,9 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const app = document.getElementById("app");
 
 let pedidos = [];
+let chamados = [];
 let knownIds = new Set();
+let knownChamadoIds = new Set();
 let session = null;
 
 function beep(){
@@ -187,6 +206,23 @@ function beep(){
     osc.connect(gain).connect(ctx.destination);
     osc.start();
     setTimeout(() => { osc.stop(); ctx.close(); }, 220);
+  } catch(e){}
+}
+
+function beepChamado(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [660, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.value = 0.16;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.18);
+      osc.stop(ctx.currentTime + i * 0.18 + 0.16);
+    });
+    setTimeout(() => ctx.close(), 500);
   } catch(e){}
 }
 
@@ -245,9 +281,35 @@ async function checkSession(){
 /* ---------------- BOARD ---------------- */
 async function startBoard(){
   await loadPedidos();
+  await loadChamados();
   renderBoard();
   subscribeRealtime();
   setInterval(renderBoard, 30000); // atualiza os "há X min" mesmo sem eventos novos
+}
+
+async function loadChamados(){
+  const { data, error } = await sb
+    .from("chamados_garcom")
+    .select("*, mesas(numero)")
+    .eq("status", "pendente")
+    .order("created_at", { ascending:true });
+
+  if (error){ console.error(error); return; }
+
+  const novoIds = new Set(data.map(c => c.id));
+  const temChamadoNovo = [...novoIds].some(id => !knownChamadoIds.has(id));
+  if (knownChamadoIds.size > 0 && temChamadoNovo) beepChamado();
+  else if (knownChamadoIds.size === 0 && data.length > 0) beepChamado();
+  knownChamadoIds = novoIds;
+
+  chamados = data;
+}
+
+async function atenderChamado(id){
+  const { error } = await sb.from("chamados_garcom").update({ status: "atendido" }).eq("id", id);
+  if (error) console.error(error);
+  await loadChamados();
+  renderBoard();
 }
 
 async function loadPedidos(){
@@ -275,6 +337,9 @@ function subscribeRealtime(){
     .on("postgres_changes", { event: "*", schema: "public", table: "itens_pedido" }, async () => {
       await loadPedidos(); renderBoard();
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "chamados_garcom" }, async () => {
+      await loadChamados(); renderBoard();
+    })
     .subscribe();
 }
 
@@ -293,6 +358,16 @@ function renderBoard(){
       <div class="stamp">Painel da Cozinha</div>
       <button class="logout-btn" id="logoutBtn">sair</button>
     </div>
+    ${chamados.length > 0 ? `
+      <div class="chamados-bar">
+        ${chamados.map(c => `
+          <div class="chamado-chip">
+            🔔 MESA ${String(c.mesas?.numero ?? '?').padStart(2,'0')} chamou
+            <button data-atender="${c.id}">atender</button>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
     <div class="board">
       ${COLUNAS.map(col => {
         const itens = pedidos.filter(p => p.status === col.status);
@@ -322,6 +397,9 @@ function renderBoard(){
   document.querySelectorAll("[data-cancel]").forEach(btn => {
     btn.addEventListener("click", () => cancelarPedido(btn.dataset.cancel));
   });
+  document.querySelectorAll("[data-atender]").forEach(btn => {
+    btn.addEventListener("click", () => atenderChamado(btn.dataset.atender));
+  });
 }
 
 function renderCard(p){
@@ -339,6 +417,7 @@ function renderCard(p){
           <div class="card-item">
             <span>${i.quantidade}x ${i.nome_produto}</span>
           </div>
+          ${(i.adicionais && i.adicionais.length > 0) ? `<div class="card-item-obs" style="color:var(--amber);">+ ${i.adicionais.map(a => a.nome).join(', ')}</div>` : ''}
           ${i.observacao ? `<div class="card-item-obs">obs: ${i.observacao}</div>` : ''}
         `).join('')}
       </div>

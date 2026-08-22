@@ -427,6 +427,19 @@
     text-align:center; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--stamp);
     padding:14px; background:rgba(180,57,44,0.1); border-radius:10px; margin-bottom:20px;
   }
+
+  .btn-chamar-atendente{
+    display:none;
+    position:fixed; right:16px; bottom:96px; z-index:16;
+    width:52px; height:52px; border-radius:50%;
+    background:var(--sage); color:var(--paper); border:none;
+    font-size:22px; cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,0.35);
+    align-items:center; justify-content:center;
+  }
+  .btn-chamar-atendente.visivel{ display:flex; }
+  .btn-chamar-atendente:active{ transform:scale(0.94); }
+  .btn-chamar-atendente:disabled{ opacity:0.5; }
 </style>
 </head>
 <body>
@@ -434,6 +447,12 @@
 <div id="app">
   <div class="state-msg">Carregando cardápio…</div>
 </div>
+
+<div id="modalAdicionaisRoot"></div>
+
+<button class="btn-chamar-atendente" id="btnChamarAtendente" title="Chamar atendente">
+  🔔
+</button>
 
 <div class="toast" id="toast"></div>
 
@@ -501,6 +520,7 @@ async function init(){
     return;
   }
   mesa = mesaData;
+  document.getElementById("btnChamarAtendente").classList.add("visivel");
 
   const salvo = localStorage.getItem(chaveStorageMesa(mesa.numero));
   if (salvo){
@@ -514,7 +534,7 @@ async function init(){
 
   const [{ data: catData }, { data: prodData }] = await Promise.all([
     sb.from("categorias").select("*").order("ordem", { ascending:true }),
-    sb.from("produtos").select("*").eq("disponivel", true).order("ordem", { ascending:true })
+    sb.from("produtos").select("*, adicionais(*)").eq("disponivel", true).order("ordem", { ascending:true })
   ]);
 
   categorias = catData || [];
@@ -595,7 +615,7 @@ function render(){
     btn.addEventListener("click", () => addToCart(btn.dataset.prod));
   });
   document.querySelectorAll(".qty-btn").forEach(btn => {
-    btn.addEventListener("click", () => changeQty(btn.dataset.prod, parseInt(btn.dataset.delta)));
+    btn.addEventListener("click", () => changeQty(btn.dataset.chave, parseInt(btn.dataset.delta)));
   });
 
   document.getElementById("cartTab")?.addEventListener("click", openDrawer);
@@ -608,7 +628,9 @@ function render(){
 }
 
 function renderProduto(p){
-  const inCart = cart.find(i => i.produto_id === p.id);
+  const temAdicionais = p.adicionais && p.adicionais.length > 0;
+  const chaveSemAdicionais = p.id + '|';
+  const inCart = !temAdicionais ? cart.find(i => i.chave === chaveSemAdicionais) : null;
   return `
     <div class="produto-card ${p.imagem_url ? '' : 'sem-imagem'}">
       <div class="produto-img-wrap">
@@ -621,12 +643,17 @@ function renderProduto(p){
         <div class="produto-nome">${p.nome}</div>
         ${p.descricao ? `<div class="produto-desc">${p.descricao}</div>` : ''}
         <div class="produto-footer">
-          <div class="produto-preco">${formatBRL(Number(p.preco))}</div>
-          ${inCart ? `
+          <div class="produto-preco">
+            ${formatBRL(Number(p.preco))}
+            ${temAdicionais ? `<span style="display:block; font-size:10.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-weight:400;">+ adicionais</span>` : ''}
+          </div>
+          ${temAdicionais ? `
+            <button class="produto-add" data-prod="${p.id}">+</button>
+          ` : inCart ? `
             <div class="qty-control">
-              <button class="qty-btn" data-prod="${p.id}" data-delta="-1">–</button>
+              <button class="qty-btn" data-chave="${chaveSemAdicionais}" data-delta="-1">–</button>
               <span>${inCart.quantidade}</span>
-              <button class="qty-btn" data-prod="${p.id}" data-delta="1">+</button>
+              <button class="qty-btn" data-chave="${chaveSemAdicionais}" data-delta="1">+</button>
             </div>
           ` : `
             <button class="produto-add" data-prod="${p.id}">+</button>
@@ -637,20 +664,100 @@ function renderProduto(p){
   `;
 }
 
+let produtoModalAdicionais = null;
+let selecaoAdicionaisTemp = [];
+
 function addToCart(produtoId){
   const p = produtos.find(x => x.id === produtoId);
   if (!p) return;
-  const existing = cart.find(i => i.produto_id === produtoId);
-  if (existing){ existing.quantidade += 1; }
-  else { cart.push({ produto_id:p.id, nome:p.nome, preco:Number(p.preco), quantidade:1, observacao:"" }); }
+  if (p.adicionais && p.adicionais.length > 0){
+    produtoModalAdicionais = p;
+    selecaoAdicionaisTemp = [];
+    desenharModalAdicionais();
+    return;
+  }
+  adicionarAoCarrinho(p, []);
+}
+
+function adicionarAoCarrinho(produto, adicionaisSelecionados){
+  const chave = produto.id + '|' + adicionaisSelecionados.map(a => a.id).sort().join(',');
+  const existing = cart.find(i => i.chave === chave);
+  if (existing){
+    existing.quantidade += 1;
+  } else {
+    const precoUnitario = Number(produto.preco) + adicionaisSelecionados.reduce((s,a) => s + Number(a.preco), 0);
+    cart.push({
+      chave,
+      produto_id: produto.id,
+      nome: produto.nome,
+      adicionais: adicionaisSelecionados.map(a => ({ nome:a.nome, preco:Number(a.preco) })),
+      preco: precoUnitario,
+      quantidade: 1,
+      observacao: ""
+    });
+  }
   render();
 }
 
-function changeQty(produtoId, delta){
-  const item = cart.find(i => i.produto_id === produtoId);
+function desenharModalAdicionais(){
+  const p = produtoModalAdicionais;
+  const totalUnit = Number(p.preco) + selecaoAdicionaisTemp.reduce((s,a) => s + Number(a.preco), 0);
+  const root = document.getElementById("modalAdicionaisRoot");
+  root.innerHTML = `
+    <div class="drawer-overlay open" id="adicionaisOverlay"></div>
+    <div class="receipt open" id="adicionaisModal">
+      <div class="receipt-serrated"></div>
+      <div class="receipt-head">
+        <button class="btn-close-drawer" id="fecharAdicionaisBtn">fechar ▾</button>
+        <div class="t1">${p.nome.toUpperCase()}</div>
+        <div class="t2">Escolha os adicionais</div>
+      </div>
+      <div class="receipt-items">
+        ${p.adicionais.map(a => `
+          <label style="display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px dotted var(--line); cursor:pointer;">
+            <span style="display:flex; align-items:center; gap:10px; font-size:14px;">
+              <input type="checkbox" data-adicional="${a.id}" ${selecaoAdicionaisTemp.find(s => s.id === a.id) ? 'checked' : ''}/>
+              ${a.nome}
+            </span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--stamp);">+ ${formatBRL(Number(a.preco))}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div class="receipt-total">
+        <span>PREÇO UNITÁRIO</span><span>${formatBRL(totalUnit)}</span>
+      </div>
+      <div class="receipt-footer">
+        <button class="btn-send" id="confirmarAdicionaisBtn">ADICIONAR AO CARRINHO</button>
+      </div>
+    </div>
+  `;
+
+  root.querySelectorAll("[data-adicional]").forEach(chk => {
+    chk.addEventListener("change", () => {
+      const ad = p.adicionais.find(a => a.id === chk.dataset.adicional);
+      if (chk.checked) selecaoAdicionaisTemp.push(ad);
+      else selecaoAdicionaisTemp = selecaoAdicionaisTemp.filter(s => s.id !== ad.id);
+      desenharModalAdicionais();
+    });
+  });
+  document.getElementById("adicionaisOverlay").addEventListener("click", fecharModalAdicionais);
+  document.getElementById("fecharAdicionaisBtn").addEventListener("click", fecharModalAdicionais);
+  document.getElementById("confirmarAdicionaisBtn").addEventListener("click", () => {
+    adicionarAoCarrinho(p, selecaoAdicionaisTemp);
+    fecharModalAdicionais();
+  });
+}
+
+function fecharModalAdicionais(){
+  document.getElementById("modalAdicionaisRoot").innerHTML = "";
+  produtoModalAdicionais = null;
+}
+
+function changeQty(chave, delta){
+  const item = cart.find(i => i.chave === chave);
   if (!item) return;
   item.quantidade += delta;
-  if (item.quantidade <= 0) cart = cart.filter(i => i.produto_id !== produtoId);
+  if (item.quantidade <= 0) cart = cart.filter(i => i.chave !== chave);
   render();
 }
 
@@ -677,10 +784,11 @@ function renderReceiptItems(){
     <div class="receipt-item">
       <div class="receipt-item-name">
         ${i.quantidade}x ${i.nome}
+        ${(i.adicionais && i.adicionais.length > 0) ? `<div class="receipt-item-obs">+ ${i.adicionais.map(a => a.nome).join(', ')}</div>` : ''}
         <div class="receipt-item-obs">
-          <input type="text" placeholder="observação (ex: sem cebola)" data-obs="${i.produto_id}" value="${i.observacao}"/>
+          <input type="text" placeholder="observação (ex: sem cebola)" data-obs="${i.chave}" value="${i.observacao}"/>
         </div>
-        <button class="receipt-remove" data-remove="${i.produto_id}">remover</button>
+        <button class="receipt-remove" data-remove="${i.chave}">remover</button>
       </div>
       <div>${formatBRL(i.quantidade * i.preco)}</div>
     </div>
@@ -688,13 +796,13 @@ function renderReceiptItems(){
 
   el.querySelectorAll("[data-obs]").forEach(inp => {
     inp.addEventListener("input", () => {
-      const item = cart.find(i => i.produto_id === inp.dataset.obs);
+      const item = cart.find(i => i.chave === inp.dataset.obs);
       if (item) item.observacao = inp.value;
     });
   });
   el.querySelectorAll("[data-remove]").forEach(btn => {
     btn.addEventListener("click", () => {
-      cart = cart.filter(i => i.produto_id !== btn.dataset.remove);
+      cart = cart.filter(i => i.chave !== btn.dataset.remove);
       render();
       openDrawer();
     });
@@ -722,7 +830,8 @@ async function enviarPedido(){
       nome_produto: i.nome,
       quantidade: i.quantidade,
       preco_unitario: i.preco,
-      observacao: i.observacao || null
+      observacao: i.observacao || null,
+      adicionais: i.adicionais || []
     }));
 
     const { error: itensErr } = await sb.from("itens_pedido").insert(itens);
@@ -812,7 +921,10 @@ function desenharAcompanhamento(pedido){
 
       <div class="track-itens">
         ${(pedido.itens_pedido || []).map(i => `
-          <div class="item-linha"><span>${i.quantidade}x ${i.nome_produto}</span><span>${formatBRL(i.quantidade * i.preco_unitario)}</span></div>
+          <div class="item-linha">
+            <span>${i.quantidade}x ${i.nome_produto}${(i.adicionais && i.adicionais.length > 0) ? `<br/><span style="font-size:11px; opacity:0.7;">+ ${i.adicionais.map(a => a.nome).join(', ')}</span>` : ''}</span>
+            <span>${formatBRL(i.quantidade * i.preco_unitario)}</span>
+          </div>
         `).join('')}
         <div class="track-total"><span>TOTAL</span><span>${formatBRL(pedido.total)}</span></div>
       </div>
@@ -823,6 +935,35 @@ function desenharAcompanhamento(pedido){
 
   document.getElementById("voltarCardapioBtn").addEventListener("click", render);
 }
+
+async function chamarAtendente(){
+  const btn = document.getElementById("btnChamarAtendente");
+  btn.disabled = true;
+
+  const { data: pendente } = await sb
+    .from("chamados_garcom")
+    .select("id")
+    .eq("mesa_id", mesa.id)
+    .eq("status", "pendente")
+    .maybeSingle();
+
+  if (pendente){
+    showToast("Você já chamou o atendente, aguarde 🙂");
+    setTimeout(() => btn.disabled = false, 2000);
+    return;
+  }
+
+  const { error } = await sb.from("chamados_garcom").insert({ mesa_id: mesa.id, status: "pendente" });
+  if (error){
+    showToast("Não foi possível chamar o atendente. Tente de novo.");
+    console.error(error);
+  } else {
+    showToast("Atendente chamado! Já estamos indo até você 🙂");
+  }
+  setTimeout(() => btn.disabled = false, 15000);
+}
+
+document.getElementById("btnChamarAtendente").addEventListener("click", chamarAtendente);
 
 init();
 </script>
