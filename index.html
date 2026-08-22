@@ -431,14 +431,19 @@
   .btn-chamar-atendente{
     display:none;
     position:fixed; right:16px; bottom:96px; z-index:16;
-    width:52px; height:52px; border-radius:50%;
     background:var(--sage); color:var(--paper); border:none;
-    font-size:22px; cursor:pointer;
+    border-radius:999px;
+    padding:12px 18px 12px 14px;
+    cursor:pointer;
     box-shadow:0 4px 14px rgba(0,0,0,0.35);
-    align-items:center; justify-content:center;
+    align-items:center; justify-content:center; gap:8px;
+  }
+  .btn-chamar-atendente .sino{ font-size:19px; }
+  .btn-chamar-atendente .texto{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:700; letter-spacing:0.3px;
   }
   .btn-chamar-atendente.visivel{ display:flex; }
-  .btn-chamar-atendente:active{ transform:scale(0.94); }
+  .btn-chamar-atendente:active{ transform:scale(0.96); }
   .btn-chamar-atendente:disabled{ opacity:0.5; }
 </style>
 </head>
@@ -451,7 +456,7 @@
 <div id="modalAdicionaisRoot"></div>
 
 <button class="btn-chamar-atendente" id="btnChamarAtendente" title="Chamar atendente">
-  🔔
+  <span class="sino">🔔</span><span class="texto">Chamar atendente</span>
 </button>
 
 <div class="toast" id="toast"></div>
@@ -475,12 +480,23 @@ let categorias = [];
 let produtos = [];
 let cart = [];             // { produto_id, nome, preco, quantidade, observacao }
 let activeCat = null;
-let pedidoAtivoId = null;  // id do último pedido feito nesta mesa (guardado no navegador)
+let pedidosAtivosIds = [];  // ids de TODOS os pedidos em aberto feitos nesta mesa (guardado no navegador)
 let telaAtual = "cardapio"; // "cardapio" | "acompanhamento"
-let canalRealtimePedido = null;
+let canalRealtimePedidos = null;
 
 function chaveStorageMesa(numero){
-  return `pedido_ativo_mesa_${numero}`;
+  return `pedidos_ativos_mesa_${numero}`;
+}
+
+function lerPedidosAtivosStorage(numero){
+  try{
+    const raw = localStorage.getItem(chaveStorageMesa(numero));
+    return raw ? JSON.parse(raw) : [];
+  } catch(e){ return []; }
+}
+
+function salvarPedidosAtivosStorage(numero, ids){
+  localStorage.setItem(chaveStorageMesa(numero), JSON.stringify(ids));
 }
 
 function getMesaNumero(){
@@ -522,14 +538,12 @@ async function init(){
   mesa = mesaData;
   document.getElementById("btnChamarAtendente").classList.add("visivel");
 
-  const salvo = localStorage.getItem(chaveStorageMesa(mesa.numero));
-  if (salvo){
-    const { data: pedidoSalvo } = await sb.from("pedidos").select("id, status").eq("id", salvo).maybeSingle();
-    if (pedidoSalvo && !["entregue", "cancelado"].includes(pedidoSalvo.status)){
-      pedidoAtivoId = pedidoSalvo.id;
-    } else {
-      localStorage.removeItem(chaveStorageMesa(mesa.numero));
-    }
+  const idsSalvos = lerPedidosAtivosStorage(mesa.numero);
+  if (idsSalvos.length > 0){
+    const { data: pedidosSalvos } = await sb.from("pedidos").select("id, status").in("id", idsSalvos);
+    const aindaAtivos = (pedidosSalvos || []).filter(p => !["entregue", "cancelado"].includes(p.status)).map(p => p.id);
+    pedidosAtivosIds = aindaAtivos;
+    salvarPedidosAtivosStorage(mesa.numero, aindaAtivos);
   }
 
   const [{ data: catData }, { data: prodData }] = await Promise.all([
@@ -541,7 +555,7 @@ async function init(){
   produtos = prodData || [];
   activeCat = categorias[0]?.id || null;
 
-  if (pedidoAtivoId){
+  if (pedidosAtivosIds.length > 0){
     renderAcompanhamento();
   } else {
     render();
@@ -551,9 +565,9 @@ async function init(){
 function render(){
   telaAtual = "cardapio";
   app.innerHTML = `
-    ${pedidoAtivoId ? `
+    ${pedidosAtivosIds.length > 0 ? `
       <div class="pedido-ativo-badge" id="pedidoAtivoBadge">
-        <span class="dot-pulse"></span> Acompanhar meu pedido
+        <span class="dot-pulse"></span> Acompanhar ${pedidosAtivosIds.length > 1 ? `meus pedidos (${pedidosAtivosIds.length})` : 'meu pedido'}
       </div>
     ` : ''}
     <div class="hero">
@@ -839,8 +853,8 @@ async function enviarPedido(){
 
     cart = [];
     closeDrawer();
-    pedidoAtivoId = pedido.id;
-    localStorage.setItem(chaveStorageMesa(mesa.numero), pedido.id);
+    pedidosAtivosIds = [...pedidosAtivosIds, pedido.id];
+    salvarPedidosAtivosStorage(mesa.numero, pedidosAtivosIds);
     renderAcompanhamento();
   } catch(err){
     console.error(err);
@@ -857,45 +871,82 @@ const ETAPAS = [
   { status: "entregue", titulo: "Entregue", desc: "Bom apetite!" }
 ];
 
+let pedidosAcompanhamento = []; // dados completos dos pedidos ativos, para re-render em tempo real
+
 async function renderAcompanhamento(){
   telaAtual = "acompanhamento";
-  if (canalRealtimePedido){ sb.removeChannel(canalRealtimePedido); canalRealtimePedido = null; }
+  if (canalRealtimePedidos){ sb.removeChannel(canalRealtimePedidos); canalRealtimePedidos = null; }
 
-  const { data: pedido, error } = await sb
+  if (pedidosAtivosIds.length === 0){ render(); return; }
+
+  const { data, error } = await sb
     .from("pedidos")
     .select("*, itens_pedido(*)")
-    .eq("id", pedidoAtivoId)
-    .maybeSingle();
+    .in("id", pedidosAtivosIds)
+    .order("created_at", { ascending:true });
 
-  if (error || !pedido){
-    pedidoAtivoId = null;
-    localStorage.removeItem(chaveStorageMesa(mesa.numero));
+  if (error){
+    showToast("Não foi possível carregar seus pedidos.");
     render();
     return;
   }
 
-  desenharAcompanhamento(pedido);
+  // remove da lista qualquer pedido que já não existe mais / já foi entregue-cancelado
+  pedidosAcompanhamento = (data || []).filter(p => !["entregue", "cancelado"].includes(p.status));
+  const idsAindaAtivos = pedidosAcompanhamento.map(p => p.id);
+  if (idsAindaAtivos.length !== pedidosAtivosIds.length){
+    pedidosAtivosIds = idsAindaAtivos;
+    salvarPedidosAtivosStorage(mesa.numero, pedidosAtivosIds);
+  }
 
-  canalRealtimePedido = sb.channel(`pedido-${pedido.id}`)
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos", filter: `id=eq.${pedido.id}` }, (payload) => {
-      desenharAcompanhamento({ ...pedido, ...payload.new, itens_pedido: pedido.itens_pedido });
+  if (pedidosAcompanhamento.length === 0){ render(); return; }
+
+  desenharAcompanhamento();
+
+  canalRealtimePedidos = sb.channel(`pedidos-mesa-${mesa.id}`)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, (payload) => {
+      if (!pedidosAtivosIds.includes(payload.new.id)) return;
+
       if (["entregue", "cancelado"].includes(payload.new.status)){
-        pedidoAtivoId = null;
-        localStorage.removeItem(chaveStorageMesa(mesa.numero));
+        pedidosAtivosIds = pedidosAtivosIds.filter(id => id !== payload.new.id);
+        salvarPedidosAtivosStorage(mesa.numero, pedidosAtivosIds);
+        pedidosAcompanhamento = pedidosAcompanhamento.filter(p => p.id !== payload.new.id);
+      } else {
+        pedidosAcompanhamento = pedidosAcompanhamento.map(p => p.id === payload.new.id ? { ...p, ...payload.new } : p);
       }
+
+      if (pedidosAcompanhamento.length === 0){ render(); return; }
+      desenharAcompanhamento();
     })
     .subscribe();
 }
 
-function desenharAcompanhamento(pedido){
-  const cancelado = pedido.status === "cancelado";
-  const etapaAtualIndex = ETAPAS.findIndex(e => e.status === pedido.status);
-
+function desenharAcompanhamento(){
   app.innerHTML = `
     <div class="track-screen">
       <div class="track-header">
-        <div class="stamp">Seu pedido</div>
+        <div class="stamp">Seu${pedidosAcompanhamento.length > 1 ? 's pedidos' : ' pedido'}</div>
         <div class="mesa-tag" style="margin-top:14px;">MESA Nº <span class="mesa-num">${String(mesa.numero).padStart(2,'0')}</span></div>
+      </div>
+
+      ${pedidosAcompanhamento.map(pedido => desenharCardPedido(pedido)).join('')}
+
+      <button class="btn-outline" id="voltarCardapioBtn" style="width:100%;">Ver cardápio / fazer outro pedido</button>
+    </div>
+  `;
+
+  document.getElementById("voltarCardapioBtn").addEventListener("click", render);
+}
+
+function desenharCardPedido(pedido){
+  const cancelado = pedido.status === "cancelado";
+  const etapaAtualIndex = ETAPAS.findIndex(e => e.status === pedido.status);
+  const horaPedido = new Date(pedido.created_at).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+
+  return `
+    <div style="margin-bottom:34px; padding-bottom:30px; border-bottom:1px dashed #37352C;">
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; margin-bottom:16px; text-align:center;">
+        PEDIDO FEITO ÀS ${horaPedido}
       </div>
 
       ${cancelado ? `
@@ -928,17 +979,34 @@ function desenharAcompanhamento(pedido){
         `).join('')}
         <div class="track-total"><span>TOTAL</span><span>${formatBRL(pedido.total)}</span></div>
       </div>
-
-      <button class="btn-outline" id="voltarCardapioBtn" style="width:100%;">Ver cardápio / fazer outro pedido</button>
     </div>
   `;
+}
 
-  document.getElementById("voltarCardapioBtn").addEventListener("click", render);
+function tocarSino(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const agora = ctx.currentTime;
+    // timbre de sino: fundamental + harmônicos com decaimento exponencial
+    [ [880, 0.22], [1320, 0.12], [1760, 0.07] ].forEach(([freq, vol]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, agora);
+      gain.gain.exponentialRampToValueAtTime(0.001, agora + 1.1);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(agora);
+      osc.stop(agora + 1.1);
+    });
+    setTimeout(() => ctx.close(), 1300);
+  } catch(e){}
 }
 
 async function chamarAtendente(){
   const btn = document.getElementById("btnChamarAtendente");
   btn.disabled = true;
+  tocarSino();
 
   const { data: pendente } = await sb
     .from("chamados_garcom")
