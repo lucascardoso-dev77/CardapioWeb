@@ -351,6 +351,82 @@
     color:var(--paper); padding:12px 22px; border-radius:10px;
     font-family:'IBM Plex Mono',monospace; font-size:13px; cursor:pointer;
   }
+
+  /* BADGE flutuante de pedido ativo */
+  .pedido-ativo-badge{
+    position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    background:var(--sage); color:var(--paper);
+    padding:10px 18px; border-radius:999px; z-index:15;
+    font-family:'IBM Plex Mono',monospace; font-size:12.5px;
+    display:flex; align-items:center; gap:8px; cursor:pointer;
+    box-shadow:0 4px 14px rgba(0,0,0,0.3);
+    max-width:90%;
+  }
+  .pedido-ativo-badge .dot-pulse{
+    width:7px; height:7px; border-radius:50%; background:var(--paper);
+    animation:pulse 1.4s infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  /* TELA DE ACOMPANHAMENTO */
+  .track-screen{
+    max-width:520px; margin:0 auto; padding:50px 24px 40px; color:var(--paper);
+  }
+  .track-header{ text-align:center; margin-bottom:36px; }
+  .track-header .mesa-tag{
+    font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:2px; color:#B8B2A2;
+  }
+
+  .track-steps{ display:flex; flex-direction:column; gap:0; margin-bottom:32px; }
+  .track-step{ display:flex; gap:14px; position:relative; padding-bottom:28px; }
+  .track-step:last-child{ padding-bottom:0; }
+  .track-step .connector{
+    position:absolute; left:13px; top:28px; bottom:0; width:2px;
+    background:#3A382F;
+  }
+  .track-step:last-child .connector{ display:none; }
+  .track-step.done .connector{ background:var(--sage); }
+
+  .track-dot{
+    width:28px; height:28px; border-radius:50%; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    background:#242219; border:2px solid #3A382F;
+    font-size:13px; z-index:1;
+  }
+  .track-step.done .track-dot{ background:var(--sage); border-color:var(--sage); color:var(--paper); }
+  .track-step.current .track-dot{
+    background:var(--stamp); border-color:var(--stamp); color:var(--paper);
+    box-shadow:0 0 0 5px rgba(180,57,44,0.25);
+  }
+
+  .track-label{ padding-top:3px; }
+  .track-label .titulo{
+    font-family:'Fraunces',serif; font-weight:600; font-size:16px; color:#6B6558;
+  }
+  .track-step.done .track-label .titulo,
+  .track-step.current .track-label .titulo{ color:var(--paper); }
+  .track-label .desc{
+    font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#6B6558; margin-top:2px;
+  }
+
+  .track-itens{
+    background:#1F1E19; border:1px solid #37352C; border-radius:12px;
+    padding:16px 18px; margin-bottom:24px;
+  }
+  .track-itens .item-linha{
+    display:flex; justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace; font-size:13px;
+    padding:6px 0; border-bottom:1px dotted #37352C;
+  }
+  .track-itens .item-linha:last-child{ border-bottom:none; }
+  .track-total{
+    display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace;
+    font-weight:700; font-size:14px; padding-top:8px; margin-top:6px; border-top:2px dashed #37352C;
+  }
+  .track-cancelado{
+    text-align:center; font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--stamp);
+    padding:14px; background:rgba(180,57,44,0.1); border-radius:10px; margin-bottom:20px;
+  }
 </style>
 </head>
 <body>
@@ -380,6 +456,13 @@ let categorias = [];
 let produtos = [];
 let cart = [];             // { produto_id, nome, preco, quantidade, observacao }
 let activeCat = null;
+let pedidoAtivoId = null;  // id do último pedido feito nesta mesa (guardado no navegador)
+let telaAtual = "cardapio"; // "cardapio" | "acompanhamento"
+let canalRealtimePedido = null;
+
+function chaveStorageMesa(numero){
+  return `pedido_ativo_mesa_${numero}`;
+}
 
 function getMesaNumero(){
   const path = window.location.pathname; // ex: /mesa/5
@@ -419,6 +502,16 @@ async function init(){
   }
   mesa = mesaData;
 
+  const salvo = localStorage.getItem(chaveStorageMesa(mesa.numero));
+  if (salvo){
+    const { data: pedidoSalvo } = await sb.from("pedidos").select("id, status").eq("id", salvo).maybeSingle();
+    if (pedidoSalvo && !["entregue", "cancelado"].includes(pedidoSalvo.status)){
+      pedidoAtivoId = pedidoSalvo.id;
+    } else {
+      localStorage.removeItem(chaveStorageMesa(mesa.numero));
+    }
+  }
+
   const [{ data: catData }, { data: prodData }] = await Promise.all([
     sb.from("categorias").select("*").order("ordem", { ascending:true }),
     sb.from("produtos").select("*").eq("disponivel", true).order("ordem", { ascending:true })
@@ -428,11 +521,21 @@ async function init(){
   produtos = prodData || [];
   activeCat = categorias[0]?.id || null;
 
-  render();
+  if (pedidoAtivoId){
+    renderAcompanhamento();
+  } else {
+    render();
+  }
 }
 
 function render(){
+  telaAtual = "cardapio";
   app.innerHTML = `
+    ${pedidoAtivoId ? `
+      <div class="pedido-ativo-badge" id="pedidoAtivoBadge">
+        <span class="dot-pulse"></span> Acompanhar meu pedido
+      </div>
+    ` : ''}
     <div class="hero">
       <div class="stamp">Cardápio</div>
       <div class="mesa-tag">MESA Nº <span class="mesa-num">${String(mesa.numero).padStart(2,'0')}</span></div>
@@ -499,6 +602,7 @@ function render(){
   document.getElementById("overlay")?.addEventListener("click", closeDrawer);
   document.getElementById("closeDrawer")?.addEventListener("click", closeDrawer);
   document.getElementById("sendBtn")?.addEventListener("click", enviarPedido);
+  document.getElementById("pedidoAtivoBadge")?.addEventListener("click", renderAcompanhamento);
 
   renderReceiptItems();
 }
@@ -626,7 +730,9 @@ async function enviarPedido(){
 
     cart = [];
     closeDrawer();
-    showConfirmScreen();
+    pedidoAtivoId = pedido.id;
+    localStorage.setItem(chaveStorageMesa(mesa.numero), pedido.id);
+    renderAcompanhamento();
   } catch(err){
     console.error(err);
     showToast("Não foi possível enviar o pedido. Tente novamente.");
@@ -635,15 +741,87 @@ async function enviarPedido(){
   }
 }
 
-function showConfirmScreen(){
+const ETAPAS = [
+  { status: "novo", titulo: "Pedido recebido", desc: "Sua comanda chegou na cozinha" },
+  { status: "preparando", titulo: "Em preparo", desc: "Seu pedido está sendo feito" },
+  { status: "pronto", titulo: "Pronto", desc: "Já vai chegar até você" },
+  { status: "entregue", titulo: "Entregue", desc: "Bom apetite!" }
+];
+
+async function renderAcompanhamento(){
+  telaAtual = "acompanhamento";
+  if (canalRealtimePedido){ sb.removeChannel(canalRealtimePedido); canalRealtimePedido = null; }
+
+  const { data: pedido, error } = await sb
+    .from("pedidos")
+    .select("*, itens_pedido(*)")
+    .eq("id", pedidoAtivoId)
+    .maybeSingle();
+
+  if (error || !pedido){
+    pedidoAtivoId = null;
+    localStorage.removeItem(chaveStorageMesa(mesa.numero));
+    render();
+    return;
+  }
+
+  desenharAcompanhamento(pedido);
+
+  canalRealtimePedido = sb.channel(`pedido-${pedido.id}`)
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos", filter: `id=eq.${pedido.id}` }, (payload) => {
+      desenharAcompanhamento({ ...pedido, ...payload.new, itens_pedido: pedido.itens_pedido });
+      if (["entregue", "cancelado"].includes(payload.new.status)){
+        pedidoAtivoId = null;
+        localStorage.removeItem(chaveStorageMesa(mesa.numero));
+      }
+    })
+    .subscribe();
+}
+
+function desenharAcompanhamento(pedido){
+  const cancelado = pedido.status === "cancelado";
+  const etapaAtualIndex = ETAPAS.findIndex(e => e.status === pedido.status);
+
   app.innerHTML = `
-    <div class="confirm-screen">
-      <div class="stamp">Pedido enviado!</div>
-      <p>Sua comanda já foi impressa na cozinha.<br>Fique atento, seu pedido está a caminho.</p>
-      <button class="btn-outline" id="novoPedidoBtn">Fazer outro pedido</button>
+    <div class="track-screen">
+      <div class="track-header">
+        <div class="stamp">Seu pedido</div>
+        <div class="mesa-tag" style="margin-top:14px;">MESA Nº <span class="mesa-num">${String(mesa.numero).padStart(2,'0')}</span></div>
+      </div>
+
+      ${cancelado ? `
+        <div class="track-cancelado">Este pedido foi cancelado. Fale com um atendente se tiver dúvidas.</div>
+      ` : `
+        <div class="track-steps">
+          ${ETAPAS.map((etapa, i) => {
+            const done = i < etapaAtualIndex;
+            const current = i === etapaAtualIndex;
+            return `
+              <div class="track-step ${done ? 'done' : ''} ${current ? 'current' : ''}">
+                <div class="connector"></div>
+                <div class="track-dot">${done ? '✓' : (i + 1)}</div>
+                <div class="track-label">
+                  <div class="titulo">${etapa.titulo}</div>
+                  <div class="desc">${etapa.desc}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+
+      <div class="track-itens">
+        ${(pedido.itens_pedido || []).map(i => `
+          <div class="item-linha"><span>${i.quantidade}x ${i.nome_produto}</span><span>${formatBRL(i.quantidade * i.preco_unitario)}</span></div>
+        `).join('')}
+        <div class="track-total"><span>TOTAL</span><span>${formatBRL(pedido.total)}</span></div>
+      </div>
+
+      <button class="btn-outline" id="voltarCardapioBtn" style="width:100%;">Ver cardápio / fazer outro pedido</button>
     </div>
   `;
-  document.getElementById("novoPedidoBtn").addEventListener("click", render);
+
+  document.getElementById("voltarCardapioBtn").addEventListener("click", render);
 }
 
 init();
