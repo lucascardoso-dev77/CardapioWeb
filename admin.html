@@ -1462,6 +1462,7 @@ const app = document.getElementById("app");
 let categorias = [];
 let produtos = [];
 let mesas = [];
+let configuracoes = { taxa_entrega: 0 };
 let abaAtiva = "produtos";
 let editandoCategoriaId = null;
 let editandoProdutoId = null;
@@ -1502,14 +1503,16 @@ async function checkSession(){
 
 /* ---------------- CARREGAR DADOS ---------------- */
 async function carregarDados(){
-  const [{ data: catData }, { data: prodData }, { data: mesaData }] = await Promise.all([
+  const [{ data: catData }, { data: prodData }, { data: mesaData }, { data: configData }] = await Promise.all([
     sb.from("categorias").select("*").order("ordem", { ascending:true }),
     sb.from("produtos").select("*, categorias(nome), adicionais(*)").order("ordem", { ascending:true }),
-    sb.from("mesas").select("*").order("numero", { ascending:true })
+    sb.from("mesas").select("*").order("numero", { ascending:true }),
+    sb.from("configuracoes").select("*").eq("id", 1).maybeSingle()
   ]);
   categorias = catData || [];
   produtos = prodData || [];
   mesas = mesaData || [];
+  configuracoes = configData || { taxa_entrega: 0 };
 }
 
 async function init(){
@@ -1528,6 +1531,7 @@ function render(){
       <button class="tab-btn ${abaAtiva === 'produtos' ? 'active' : ''}" data-tab="produtos">Produtos</button>
       <button class="tab-btn ${abaAtiva === 'categorias' ? 'active' : ''}" data-tab="categorias">Categorias</button>
       <button class="tab-btn ${abaAtiva === 'mesas' ? 'active' : ''}" data-tab="mesas">Mesas</button>
+      <button class="tab-btn ${abaAtiva === 'delivery' ? 'active' : ''}" data-tab="delivery">Delivery</button>
     </div>
     <div class="content"><div class="content-inner" id="contentInner"></div></div>
   `;
@@ -1536,7 +1540,8 @@ function render(){
 
   if (abaAtiva === "produtos") renderProdutos();
   else if (abaAtiva === "categorias") renderCategorias();
-  else renderMesas();
+  else if (abaAtiva === "mesas") renderMesas();
+  else renderDelivery();
 }
 
 /* ---------------- CATEGORIAS ---------------- */
@@ -1918,6 +1923,56 @@ async function excluirMesa(id){
   if (error) return alert("Erro ao excluir: " + error.message);
   await carregarDados();
   renderMesas();
+}
+
+/* ---------------- DELIVERY ---------------- */
+function renderDelivery(){
+  const el = document.getElementById("contentInner");
+  el.innerHTML = `
+    <div class="form-card">
+      <h3>Taxa de entrega</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Esse valor é somado automaticamente ao total de todo pedido feito pela página de delivery.
+      </p>
+      <div class="form-row">
+        <div class="field" style="max-width:160px">
+          <label>Valor (R$)</label>
+          <input id="taxaEntregaInput" type="number" step="0.01" min="0" value="${configuracoes.taxa_entrega ?? 0}"/>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarTaxaBtn">Salvar taxa de entrega</button>
+      </div>
+    </div>
+
+    <div class="empty" style="padding-top:0;">
+      Dica: para deixar a entrega grátis, defina o valor como 0.
+    </div>
+  `;
+
+  document.getElementById("salvarTaxaBtn").addEventListener("click", salvarTaxaEntrega);
+}
+
+async function salvarTaxaEntrega(){
+  const valor = parseFloat(document.getElementById("taxaEntregaInput").value);
+  if (isNaN(valor) || valor < 0) return alert("Digite um valor válido.");
+
+  const btn = document.getElementById("salvarTaxaBtn");
+  btn.disabled = true;
+  btn.textContent = "Salvando...";
+
+  const { error } = await sb.from("configuracoes").update({ taxa_entrega: valor, updated_at: new Date().toISOString() }).eq("id", 1);
+
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar taxa de entrega";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
+  alert("Taxa de entrega atualizada!");
 }
 
 checkSession();

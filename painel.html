@@ -236,6 +236,10 @@ function minutosDesde(dataStr){
   return Math.max(0, Math.floor(diffMs / 60000));
 }
 
+function formatBRL(v){
+  return Number(v).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+}
+
 /* ---------------- LOGIN ---------------- */
 function renderLogin(msg){
   app.innerHTML = `
@@ -317,6 +321,19 @@ async function atenderChamado(id){
   renderBoard();
 }
 
+function falarPedido(pedido){
+  try{
+    const texto = pedido.tipo === "delivery"
+      ? "Pedidooo! Delivery"
+      : (pedido.mesas?.numero ? `Pedidooo! Mesa ${pedido.mesas.numero}` : "Pedidooo! Novo pedido");
+    const utter = new SpeechSynthesisUtterance(texto);
+    utter.lang = "pt-BR";
+    utter.rate = 0.9;
+    utter.pitch = 1.15;
+    window.speechSynthesis.speak(utter);
+  } catch(e){ console.error("Erro na voz:", e); }
+}
+
 async function loadPedidos(){
   const { data, error } = await sb
     .from("pedidos")
@@ -327,8 +344,11 @@ async function loadPedidos(){
   if (error){ console.error(error); return; }
 
   const novoIds = new Set(data.map(p => p.id));
-  const temPedidoNovo = [...novoIds].some(id => !knownIds.has(id));
-  if (knownIds.size > 0 && temPedidoNovo) beep();
+  const pedidosNovos = data.filter(p => !knownIds.has(p.id));
+  if (knownIds.size > 0 && pedidosNovos.length > 0){
+    beep();
+    pedidosNovos.forEach((p, i) => setTimeout(() => falarPedido(p), i * 1800));
+  }
   knownIds = novoIds;
 
   pedidos = data;
@@ -407,16 +427,26 @@ function renderBoard(){
   });
 }
 
+const LABEL_PAGAMENTO = { dinheiro: "Dinheiro", cartao: "Cartão", pix: "Pix" };
+
 function renderCard(p){
   const mins = minutosDesde(p.created_at);
-  const numeroMesa = p.mesas?.numero ?? "?";
   const proximo = PROXIMO_STATUS[p.status];
+  const isDelivery = p.tipo === "delivery";
+
   return `
     <div class="card">
       <div class="card-top">
-        <div class="card-mesa">MESA ${String(numeroMesa).padStart(2,'0')}</div>
+        <div class="card-mesa">${isDelivery ? `🛵 DELIVERY` : `MESA ${String(p.mesas?.numero ?? '?').padStart(2,'0')}`}</div>
         <div class="card-time ${mins >= 15 ? 'late' : ''}">há ${mins} min</div>
       </div>
+      ${isDelivery ? `
+        <div class="card-item-obs" style="margin-bottom:8px; color:var(--paper);">
+          <strong>${p.nome_cliente || 'Sem nome'}</strong>${p.telefone_cliente ? ` · ${p.telefone_cliente}` : ''}<br/>
+          📍 ${p.endereco || '(sem endereço)'}<br/>
+          💳 ${LABEL_PAGAMENTO[p.forma_pagamento] || p.forma_pagamento || '—'}${p.forma_pagamento === 'dinheiro' && p.troco_para ? ` (troco para ${formatBRL(p.troco_para)})` : ''}
+        </div>
+      ` : ''}
       <div class="card-items">
         ${(p.itens_pedido || []).map(i => `
           <div class="card-item">
@@ -425,6 +455,7 @@ function renderCard(p){
           ${(i.adicionais && i.adicionais.length > 0) ? `<div class="card-item-obs" style="color:var(--amber);">+ ${i.adicionais.map(a => a.nome).join(', ')}</div>` : ''}
           ${i.observacao ? `<div class="card-item-obs">obs: ${i.observacao}</div>` : ''}
         `).join('')}
+        ${isDelivery && p.taxa_entrega > 0 ? `<div class="card-item" style="opacity:0.7;"><span>Taxa de entrega</span><span>${formatBRL(p.taxa_entrega)}</span></div>` : ''}
       </div>
       ${p.observacao ? `<div class="card-obs-geral">Obs. geral: ${p.observacao}</div>` : ''}
       <div class="print-flag">${p.impresso ? '🖨️ comanda impressa' : '⏳ aguardando impressão'}</div>
