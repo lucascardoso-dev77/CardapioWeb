@@ -1976,6 +1976,22 @@ function renderDelivery(){
     </div>
 
     <div class="form-card">
+      <h3>Endereço da loja</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Exibido na página de delivery, pra o cliente saber de onde o pedido vai sair.
+      </p>
+      <div class="form-row">
+        <div class="field">
+          <label>Endereço completo</label>
+          <input id="enderecoLojaInput" type="text" placeholder="Rua, número, bairro, cidade" value="${configuracoes.endereco_loja || ''}"/>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarEnderecoBtn">Salvar endereço</button>
+      </div>
+    </div>
+
+    <div class="form-card">
       <h3>Taxa de entrega</h3>
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
         Esse valor é somado automaticamente ao total de todo pedido feito pela página de delivery.
@@ -1997,10 +2013,30 @@ function renderDelivery(){
   `;
 
   document.getElementById("salvarTaxaBtn").addEventListener("click", salvarTaxaEntrega);
+  document.getElementById("salvarEnderecoBtn").addEventListener("click", salvarEnderecoLoja);
   document.getElementById("salvarLogoBtn").addEventListener("click", salvarLogo);
   document.getElementById("removerLogoBtn")?.addEventListener("click", removerLogo);
   document.getElementById("salvarCapaBtn").addEventListener("click", salvarCapa);
   document.getElementById("removerCapaBtn")?.addEventListener("click", removerCapa);
+}
+
+async function salvarEnderecoLoja(){
+  const endereco = document.getElementById("enderecoLojaInput").value.trim();
+  const btn = document.getElementById("salvarEnderecoBtn");
+  btn.disabled = true;
+  btn.textContent = "Salvando...";
+
+  const { error } = await sb.from("configuracoes").update({ endereco_loja: endereco || null, updated_at: new Date().toISOString() }).eq("id", 1);
+
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar endereço";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
 }
 
 async function salvarCapa(){

@@ -501,6 +501,7 @@ let activeCat = null;
 let taxaEntrega = 0;
 let logoUrl = null;
 let capaUrl = null;
+let enderecoLoja = null;
 let pedidosAtivosIds = [];  // ids de TODOS os pedidos de delivery em aberto (guardado no navegador)
 let telaAtual = "cardapio"; // "cardapio" | "checkout" | "acompanhamento"
 let canalRealtimePedidos = null;
@@ -529,10 +530,11 @@ function formatBRL(v){
 }
 
 async function init(){
-  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url, capa_url").eq("id", 1).maybeSingle();
+  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url, capa_url, endereco_loja").eq("id", 1).maybeSingle();
   taxaEntrega = config ? Number(config.taxa_entrega) : 0;
   logoUrl = config?.logo_url || null;
   capaUrl = config?.capa_url || null;
+  enderecoLoja = config?.endereco_loja || null;
 
   const idsSalvos = lerPedidosAtivosStorage();
   if (idsSalvos.length > 0){
@@ -571,6 +573,7 @@ function render(){
       ${logoUrl ? `<div class="hero-logo-frame"><img src="${logoUrl}"/></div>` : ''}
       <div class="stamp">Delivery</div>
       <div class="mesa-tag">PEÇA E RECEBA EM CASA</div>
+      ${enderecoLoja ? `<div style="margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#8A8474;">📍 ${enderecoLoja}</div>` : ''}
     </div>
 
     <div class="cat-tabs" id="catTabs">
@@ -953,6 +956,7 @@ async function enviarPedido(){
 
 const ETAPAS = [
   { status: "novo", titulo: "Pedido recebido", desc: "Seu pedido chegou na cozinha" },
+  { status: "confirmado", titulo: "Confirmado", desc: "A cozinha aceitou seu pedido" },
   { status: "preparando", titulo: "Em preparo", desc: "Seu pedido está sendo feito" },
   { status: "pronto", titulo: "Saiu para entrega", desc: "Já está a caminho!" },
   { status: "entregue", titulo: "Entregue", desc: "Bom apetite!" }

@@ -100,11 +100,14 @@
   /* BOARD */
   .board{
     display:grid;
-    grid-template-columns:repeat(3, 1fr);
+    grid-template-columns:repeat(4, 1fr);
     gap:1px;
     background:var(--line);
   }
-  @media (max-width: 900px){
+  @media (max-width: 1100px){
+    .board{ grid-template-columns:repeat(2, 1fr); }
+  }
+  @media (max-width: 600px){
     .board{ grid-template-columns:1fr; }
   }
   .col{ background:var(--bg); min-height:70vh; }
@@ -117,6 +120,7 @@
   }
   .col-head .dot{ width:9px; height:9px; border-radius:50%; margin-right:8px; display:inline-block; }
   .col[data-status="novo"] .dot{ background:var(--stamp); }
+  .col[data-status="confirmado"] .dot{ background:#5B8FB0; }
   .col[data-status="preparando"] .dot{ background:var(--amber); }
   .col[data-status="pronto"] .dot{ background:var(--sage); }
   .col-count{ color:var(--ink-soft); }
@@ -341,7 +345,7 @@ async function loadPedidos(){
   const { data, error } = await sb
     .from("pedidos")
     .select("*, mesas(numero), itens_pedido(*)")
-    .in("status", ["novo", "preparando", "pronto"])
+    .in("status", ["novo", "confirmado", "preparando", "pronto"])
     .order("created_at", { ascending:true });
 
   if (error){ console.error(error); return; }
@@ -373,12 +377,13 @@ function subscribeRealtime(){
 
 const COLUNAS = [
   { status: "novo", label: "Novo" },
+  { status: "confirmado", label: "Confirmado" },
   { status: "preparando", label: "Preparando" },
   { status: "pronto", label: "Pronto" }
 ];
 
-const PROXIMO_STATUS = { novo: "preparando", preparando: "pronto", pronto: "entregue" };
-const LABEL_ACAO = { novo: "Iniciar preparo", preparando: "Marcar pronto", pronto: "Marcar entregue" };
+const PROXIMO_STATUS = { novo: "confirmado", confirmado: "preparando", preparando: "pronto", pronto: "entregue" };
+const LABEL_ACAO = { novo: "Confirmar pedido", confirmado: "Iniciar preparo", preparando: "Marcar pronto", pronto: "Marcar entregue" };
 
 function renderBoard(){
   app.innerHTML = `
@@ -467,7 +472,7 @@ function renderCard(p){
       <div class="print-flag">${p.impresso ? '🖨️ comanda impressa' : '⏳ aguardando impressão'}</div>
       <div class="card-actions">
         <button class="btn-advance" data-advance="${p.id}" data-novo-status="${proximo}">${LABEL_ACAO[p.status]}</button>
-        ${p.status === 'novo' ? `<button class="btn-cancel" data-cancel="${p.id}">cancelar</button>` : ''}
+        ${['novo', 'confirmado'].includes(p.status) ? `<button class="btn-cancel" data-cancel="${p.id}">cancelar</button>` : ''}
       </div>
     </div>
   `;
