@@ -1476,6 +1476,7 @@ function renderLogin(msg){
   app.innerHTML = `
     <div class="login-wrap">
       <div class="login-box">
+        ${configuracoes.logo_url ? `<img src="${configuracoes.logo_url}" style="width:56px; height:56px; object-fit:contain; margin-bottom:14px;"/>` : ''}
         <div class="stamp">Administração</div>
         <input type="email" id="loginEmail" placeholder="e-mail" autocomplete="username"/>
         <input type="password" id="loginSenha" placeholder="senha" autocomplete="current-password"/>
@@ -1524,14 +1525,17 @@ async function init(){
 function render(){
   app.innerHTML = `
     <div class="topbar">
-      <div class="stamp">Administração do Cardápio</div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        ${configuracoes.logo_url ? `<img src="${configuracoes.logo_url}" style="width:32px; height:32px; object-fit:contain; border-radius:6px;"/>` : ''}
+        <div class="stamp">Administração do Cardápio</div>
+      </div>
       <button class="logout-btn" id="logoutBtn">sair</button>
     </div>
     <div class="tabs">
       <button class="tab-btn ${abaAtiva === 'produtos' ? 'active' : ''}" data-tab="produtos">Produtos</button>
       <button class="tab-btn ${abaAtiva === 'categorias' ? 'active' : ''}" data-tab="categorias">Categorias</button>
       <button class="tab-btn ${abaAtiva === 'mesas' ? 'active' : ''}" data-tab="mesas">Mesas</button>
-      <button class="tab-btn ${abaAtiva === 'delivery' ? 'active' : ''}" data-tab="delivery">Delivery</button>
+      <button class="tab-btn ${abaAtiva === 'delivery' ? 'active' : ''}" data-tab="delivery">Configurações</button>
     </div>
     <div class="content"><div class="content-inner" id="contentInner"></div></div>
   `;
@@ -1930,6 +1934,28 @@ function renderDelivery(){
   const el = document.getElementById("contentInner");
   el.innerHTML = `
     <div class="form-card">
+      <h3>Logo da empresa</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Aparece no topo do cardápio, do delivery e do painel da cozinha.
+      </p>
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:14px;">
+        <div style="width:76px; height:76px; border-radius:12px; border:1px dashed var(--line); background:var(--paper-dim); display:flex; align-items:center; justify-content:center; overflow:hidden; flex:0 0 auto;">
+          ${configuracoes.logo_url ? `<img src="${configuracoes.logo_url}" style="width:100%; height:100%; object-fit:contain;"/>` : `<span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft);">sem logo</span>`}
+        </div>
+        <div style="flex:1;">
+          <input type="file" id="logoInput" accept="image/*"/>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft); margin-top:6px;">
+            Prefira imagem quadrada ou com fundo transparente (PNG).
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarLogoBtn">Salvar logo</button>
+        ${configuracoes.logo_url ? `<button class="btn btn-secondary" id="removerLogoBtn">Remover logo</button>` : ''}
+      </div>
+    </div>
+
+    <div class="form-card">
       <h3>Taxa de entrega</h3>
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
         Esse valor é somado automaticamente ao total de todo pedido feito pela página de delivery.
@@ -1951,6 +1977,51 @@ function renderDelivery(){
   `;
 
   document.getElementById("salvarTaxaBtn").addEventListener("click", salvarTaxaEntrega);
+  document.getElementById("salvarLogoBtn").addEventListener("click", salvarLogo);
+  document.getElementById("removerLogoBtn")?.addEventListener("click", removerLogo);
+}
+
+async function salvarLogo(){
+  const arquivo = document.getElementById("logoInput").files[0];
+  if (!arquivo) return alert("Escolha uma imagem primeiro.");
+
+  const btn = document.getElementById("salvarLogoBtn");
+  btn.disabled = true;
+  btn.textContent = "Enviando...";
+
+  const extensao = arquivo.name.split('.').pop();
+  const nomeArquivo = `logo.${extensao}`;
+
+  const { error: uploadError } = await sb.storage.from('loja').upload(nomeArquivo, arquivo, { upsert: true });
+  if (uploadError){
+    alert("Erro ao enviar imagem: " + uploadError.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar logo";
+    return;
+  }
+
+  const { data: urlData } = sb.storage.from('loja').getPublicUrl(nomeArquivo);
+  // adiciona um parâmetro pra evitar cache antigo da imagem no navegador
+  const logoUrlComVersao = `${urlData.publicUrl}?v=${Date.now()}`;
+
+  const { error } = await sb.from("configuracoes").update({ logo_url: logoUrlComVersao, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar logo";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
+}
+
+async function removerLogo(){
+  if (!confirm("Remover a logo atual?")) return;
+  const { error } = await sb.from("configuracoes").update({ logo_url: null, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return alert("Erro ao remover: " + error.message);
+  await carregarDados();
+  renderDelivery();
 }
 
 async function salvarTaxaEntrega(){
@@ -1975,7 +2046,12 @@ async function salvarTaxaEntrega(){
   alert("Taxa de entrega atualizada!");
 }
 
-checkSession();
+async function carregarConfiguracoesPublicas(){
+  const { data } = await sb.from("configuracoes").select("*").eq("id", 1).maybeSingle();
+  if (data) configuracoes = data;
+}
+
+carregarConfiguracoesPublicas().then(checkSession);
 </script>
 </body>
 </html>

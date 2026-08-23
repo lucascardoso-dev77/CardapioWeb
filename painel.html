@@ -190,6 +190,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const app = document.getElementById("app");
 
 let pedidos = [];
+let logoUrl = null;
 let chamados = [];
 let knownIds = new Set();
 let knownChamadoIds = new Set();
@@ -289,6 +290,8 @@ async function checkSession(){
 
 /* ---------------- BOARD ---------------- */
 async function startBoard(){
+  const { data: config } = await sb.from("configuracoes").select("logo_url").eq("id", 1).maybeSingle();
+  logoUrl = config?.logo_url || null;
   await loadPedidos();
   await loadChamados();
   renderBoard();
@@ -380,7 +383,10 @@ const LABEL_ACAO = { novo: "Iniciar preparo", preparando: "Marcar pronto", pront
 function renderBoard(){
   app.innerHTML = `
     <div class="topbar">
-      <div class="stamp">Painel da Cozinha</div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        ${logoUrl ? `<img src="${logoUrl}" style="width:30px; height:30px; object-fit:contain; border-radius:6px;"/>` : ''}
+        <div class="stamp">Painel da Cozinha</div>
+      </div>
       <button class="logout-btn" id="logoutBtn">sair</button>
     </div>
     ${chamados.length > 0 ? `

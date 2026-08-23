@@ -458,6 +458,7 @@ let produtos = [];
 let cart = [];             // { produto_id, nome, preco, quantidade, observacao }
 let activeCat = null;
 let taxaEntrega = 0;
+let logoUrl = null;
 let pedidosAtivosIds = [];  // ids de TODOS os pedidos de delivery em aberto (guardado no navegador)
 let telaAtual = "cardapio"; // "cardapio" | "checkout" | "acompanhamento"
 let canalRealtimePedidos = null;
@@ -486,8 +487,9 @@ function formatBRL(v){
 }
 
 async function init(){
-  const { data: config } = await sb.from("configuracoes").select("taxa_entrega").eq("id", 1).maybeSingle();
+  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url").eq("id", 1).maybeSingle();
   taxaEntrega = config ? Number(config.taxa_entrega) : 0;
+  logoUrl = config?.logo_url || null;
 
   const idsSalvos = lerPedidosAtivosStorage();
   if (idsSalvos.length > 0){
@@ -522,6 +524,7 @@ function render(){
       </div>
     ` : ''}
     <div class="hero">
+      ${logoUrl ? `<img src="${logoUrl}" style="width:52px; height:52px; object-fit:contain; margin-bottom:10px;"/>` : ''}
       <div class="stamp">Delivery</div>
       <div class="mesa-tag">PEÇA E RECEBA EM CASA</div>
     </div>
@@ -787,6 +790,7 @@ function renderCheckout(){
   app.innerHTML = `
     <div class="track-screen" style="padding-top:36px;">
       <div class="track-header">
+        ${logoUrl ? `<img src="${logoUrl}" style="width:44px; height:44px; object-fit:contain; margin-bottom:10px;"/>` : ''}
         <div class="stamp">Finalizar pedido</div>
       </div>
 
@@ -964,6 +968,7 @@ function desenharAcompanhamento(){
   app.innerHTML = `
     <div class="track-screen">
       <div class="track-header">
+        ${logoUrl ? `<img src="${logoUrl}" style="width:44px; height:44px; object-fit:contain; margin-bottom:10px;"/>` : ''}
         <div class="stamp">Seu${pedidosAcompanhamento.length > 1 ? 's pedidos' : ' pedido'}</div>
         <div class="mesa-tag" style="margin-top:14px;">DELIVERY</div>
       </div>

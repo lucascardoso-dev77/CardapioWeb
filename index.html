@@ -476,6 +476,7 @@ const app = document.getElementById("app");
 const toastEl = document.getElementById("toast");
 
 let mesa = null;          // { id, numero }
+let logoUrl = null;
 let categorias = [];
 let produtos = [];
 let cart = [];             // { produto_id, nome, preco, quantidade, observacao }
@@ -546,13 +547,15 @@ async function init(){
     salvarPedidosAtivosStorage(mesa.numero, aindaAtivos);
   }
 
-  const [{ data: catData }, { data: prodData }] = await Promise.all([
+  const [{ data: catData }, { data: prodData }, { data: configData }] = await Promise.all([
     sb.from("categorias").select("*").order("ordem", { ascending:true }),
-    sb.from("produtos").select("*, adicionais(*)").eq("disponivel", true).order("ordem", { ascending:true })
+    sb.from("produtos").select("*, adicionais(*)").eq("disponivel", true).order("ordem", { ascending:true }),
+    sb.from("configuracoes").select("logo_url").eq("id", 1).maybeSingle()
   ]);
 
   categorias = catData || [];
   produtos = prodData || [];
+  logoUrl = configData?.logo_url || null;
   activeCat = categorias[0]?.id || null;
 
   if (pedidosAtivosIds.length > 0){
@@ -571,6 +574,7 @@ function render(){
       </div>
     ` : ''}
     <div class="hero">
+      ${logoUrl ? `<img src="${logoUrl}" style="width:52px; height:52px; object-fit:contain; margin-bottom:10px;"/>` : ''}
       <div class="stamp">Cardápio</div>
       <div class="mesa-tag">MESA Nº <span class="mesa-num">${String(mesa.numero).padStart(2,'0')}</span></div>
     </div>
@@ -925,6 +929,7 @@ function desenharAcompanhamento(){
   app.innerHTML = `
     <div class="track-screen">
       <div class="track-header">
+        ${logoUrl ? `<img src="${logoUrl}" style="width:44px; height:44px; object-fit:contain; margin-bottom:10px;"/>` : ''}
         <div class="stamp">Seu${pedidosAcompanhamento.length > 1 ? 's pedidos' : ' pedido'}</div>
         <div class="mesa-tag" style="margin-top:14px;">MESA Nº <span class="mesa-num">${String(mesa.numero).padStart(2,'0')}</span></div>
       </div>
