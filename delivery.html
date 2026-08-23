@@ -28,12 +28,34 @@
   }
   .wrap{ max-width:640px; margin:0 auto; padding:0 16px; }
 
-  /* HERO: carimbo do restaurante */
+  /* HERO: logo + carimbo do restaurante */
   .hero{
-    padding:36px 16px 28px;
+    padding:44px 16px 30px;
     text-align:center;
     color:var(--paper);
   }
+  .hero-logo-frame{
+    width:78px; height:78px;
+    border-radius:20px;
+    background:var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    padding:10px;
+    margin:0 auto 20px;
+    box-shadow:0 10px 26px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
+  }
+  .hero-logo-frame img{
+    width:100%; height:100%; object-fit:contain;
+  }
+  .track-logo-frame{
+    width:56px; height:56px;
+    border-radius:16px;
+    background:var(--paper);
+    display:flex; align-items:center; justify-content:center;
+    padding:8px;
+    margin:0 auto 16px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.4);
+  }
+  .track-logo-frame img{ width:100%; height:100%; object-fit:contain; }
   .stamp{
     display:inline-block;
     border:3px solid var(--paper);
@@ -46,11 +68,11 @@
     letter-spacing:0.5px;
   }
   .hero .mesa-tag{
-    margin-top:18px;
+    margin-top:20px;
     font-family:'IBM Plex Mono',monospace;
-    font-size:13px;
-    letter-spacing:2px;
-    color:#B8B2A2;
+    font-size:12px;
+    letter-spacing:3px;
+    color:#8A8474;
   }
   .hero .mesa-num{
     color:var(--paper);
@@ -59,36 +81,39 @@
 
   /* CATEGORIAS - tabs */
   .cat-tabs{
-    display:flex; gap:8px; overflow-x:auto;
-    padding:4px 16px 16px;
+    display:flex; gap:9px; overflow-x:auto;
+    padding:6px 16px 20px;
     scrollbar-width:none;
   }
   .cat-tabs::-webkit-scrollbar{display:none;}
   .cat-tab{
     flex:0 0 auto;
     font-family:'IBM Plex Mono',monospace;
-    font-size:12.5px;
-    letter-spacing:0.5px;
+    font-size:12px;
+    letter-spacing:0.8px;
     text-transform:uppercase;
-    color:var(--paper);
-    border:1px solid #4A473E;
-    background:transparent;
-    padding:8px 14px;
+    color:#B8B2A2;
+    border:1px solid #37352C;
+    background:#1C1B17;
+    padding:9px 16px;
     border-radius:999px;
     cursor:pointer;
     white-space:nowrap;
+    transition:all 0.15s ease;
   }
   .cat-tab.active{
     background:var(--sage);
     border-color:var(--sage);
     color:var(--paper);
+    box-shadow:0 3px 10px rgba(110,122,86,0.4);
   }
 
   /* CARD DO CARDAPIO - papel */
   .paper-panel{
     background:var(--paper);
-    border-radius:14px 14px 0 0;
+    border-radius:22px 22px 0 0;
     padding:8px 0 24px;
+    box-shadow:0 -8px 24px rgba(0,0,0,0.25);
   }
   .cat-section{ padding:26px 20px 12px; }
   .cat-title{
@@ -524,7 +549,7 @@ function render(){
       </div>
     ` : ''}
     <div class="hero">
-      ${logoUrl ? `<img src="${logoUrl}" style="width:52px; height:52px; object-fit:contain; margin-bottom:10px;"/>` : ''}
+      ${logoUrl ? `<div class="hero-logo-frame"><img src="${logoUrl}"/></div>` : ''}
       <div class="stamp">Delivery</div>
       <div class="mesa-tag">PEÇA E RECEBA EM CASA</div>
     </div>
@@ -544,8 +569,9 @@ function render(){
         </div>
         <div class="produtos-grid">
           ${produtos.filter(p => p.categoria_id === cat.id).map(renderProduto).join('') || `
-            <div style="padding:0 0 20px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; font-size:13px;">
-              Sem itens nesta categoria no momento.
+            <div style="text-align:center; padding:24px 20px 32px; color:var(--ink-soft);">
+              <div style="font-size:22px; margin-bottom:8px; opacity:0.5;">🍽️</div>
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:12.5px;">Sem itens nesta categoria no momento.</div>
             </div>`}
         </div>
       `).join('')}
@@ -790,7 +816,7 @@ function renderCheckout(){
   app.innerHTML = `
     <div class="track-screen" style="padding-top:36px;">
       <div class="track-header">
-        ${logoUrl ? `<img src="${logoUrl}" style="width:44px; height:44px; object-fit:contain; margin-bottom:10px;"/>` : ''}
+        ${logoUrl ? `<div class="track-logo-frame"><img src="${logoUrl}"/></div>` : ''}
         <div class="stamp">Finalizar pedido</div>
       </div>
 
@@ -968,7 +994,7 @@ function desenharAcompanhamento(){
   app.innerHTML = `
     <div class="track-screen">
       <div class="track-header">
-        ${logoUrl ? `<img src="${logoUrl}" style="width:44px; height:44px; object-fit:contain; margin-bottom:10px;"/>` : ''}
+        ${logoUrl ? `<div class="track-logo-frame"><img src="${logoUrl}"/></div>` : ''}
         <div class="stamp">Seu${pedidosAcompanhamento.length > 1 ? 's pedidos' : ' pedido'}</div>
         <div class="mesa-tag" style="margin-top:14px;">DELIVERY</div>
       </div>
