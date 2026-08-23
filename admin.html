@@ -1956,6 +1956,26 @@ function renderDelivery(){
     </div>
 
     <div class="form-card">
+      <h3>Foto de capa</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Banner exibido no topo do cardápio e do delivery, atrás da logo. Ideal em formato paisagem (larga).
+      </p>
+      <div style="margin-bottom:14px;">
+        <div style="width:100%; max-width:340px; height:110px; border-radius:12px; border:1px dashed var(--line); background:var(--paper-dim); display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:10px;">
+          ${configuracoes.capa_url ? `<img src="${configuracoes.capa_url}" style="width:100%; height:100%; object-fit:cover;"/>` : `<span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft);">sem foto de capa</span>`}
+        </div>
+        <input type="file" id="capaInput" accept="image/*"/>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft); margin-top:6px;">
+          Recomendado: pelo menos 1200x400px, formato JPG ou PNG.
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarCapaBtn">Salvar foto de capa</button>
+        ${configuracoes.capa_url ? `<button class="btn btn-secondary" id="removerCapaBtn">Remover capa</button>` : ''}
+      </div>
+    </div>
+
+    <div class="form-card">
       <h3>Taxa de entrega</h3>
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
         Esse valor é somado automaticamente ao total de todo pedido feito pela página de delivery.
@@ -1979,6 +1999,50 @@ function renderDelivery(){
   document.getElementById("salvarTaxaBtn").addEventListener("click", salvarTaxaEntrega);
   document.getElementById("salvarLogoBtn").addEventListener("click", salvarLogo);
   document.getElementById("removerLogoBtn")?.addEventListener("click", removerLogo);
+  document.getElementById("salvarCapaBtn").addEventListener("click", salvarCapa);
+  document.getElementById("removerCapaBtn")?.addEventListener("click", removerCapa);
+}
+
+async function salvarCapa(){
+  const arquivo = document.getElementById("capaInput").files[0];
+  if (!arquivo) return alert("Escolha uma imagem primeiro.");
+
+  const btn = document.getElementById("salvarCapaBtn");
+  btn.disabled = true;
+  btn.textContent = "Enviando...";
+
+  const extensao = arquivo.name.split('.').pop();
+  const nomeArquivo = `capa.${extensao}`;
+
+  const { error: uploadError } = await sb.storage.from('loja').upload(nomeArquivo, arquivo, { upsert: true });
+  if (uploadError){
+    alert("Erro ao enviar imagem: " + uploadError.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar foto de capa";
+    return;
+  }
+
+  const { data: urlData } = sb.storage.from('loja').getPublicUrl(nomeArquivo);
+  const capaUrlComVersao = `${urlData.publicUrl}?v=${Date.now()}`;
+
+  const { error } = await sb.from("configuracoes").update({ capa_url: capaUrlComVersao, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar foto de capa";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
+}
+
+async function removerCapa(){
+  if (!confirm("Remover a foto de capa atual?")) return;
+  const { error } = await sb.from("configuracoes").update({ capa_url: null, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error) return alert("Erro ao remover: " + error.message);
+  await carregarDados();
+  renderDelivery();
 }
 
 async function salvarLogo(){

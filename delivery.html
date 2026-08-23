@@ -29,10 +29,25 @@
   .wrap{ max-width:640px; margin:0 auto; padding:0 16px; }
 
   /* HERO: logo + carimbo do restaurante */
+  .capa-wrap{
+    width:100%; height:0; padding-bottom:38%; position:relative;
+    overflow:hidden; background:linear-gradient(180deg, #232019, #181714);
+  }
+  .capa-wrap img{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  }
+  .capa-wrap::after{
+    content:''; position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(24,23,20,0.95) 100%);
+  }
   .hero{
     padding:44px 16px 30px;
     text-align:center;
     color:var(--paper);
+  }
+  .hero.com-capa{
+    padding-top:0;
+    margin-top:-46px;
   }
   .hero-logo-frame{
     width:78px; height:78px;
@@ -42,6 +57,7 @@
     padding:10px;
     margin:0 auto 20px;
     box-shadow:0 10px 26px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
+    position:relative; z-index:2;
   }
   .hero-logo-frame img{
     width:100%; height:100%; object-fit:contain;
@@ -484,6 +500,7 @@ let cart = [];             // { produto_id, nome, preco, quantidade, observacao 
 let activeCat = null;
 let taxaEntrega = 0;
 let logoUrl = null;
+let capaUrl = null;
 let pedidosAtivosIds = [];  // ids de TODOS os pedidos de delivery em aberto (guardado no navegador)
 let telaAtual = "cardapio"; // "cardapio" | "checkout" | "acompanhamento"
 let canalRealtimePedidos = null;
@@ -512,9 +529,10 @@ function formatBRL(v){
 }
 
 async function init(){
-  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url").eq("id", 1).maybeSingle();
+  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url, capa_url").eq("id", 1).maybeSingle();
   taxaEntrega = config ? Number(config.taxa_entrega) : 0;
   logoUrl = config?.logo_url || null;
+  capaUrl = config?.capa_url || null;
 
   const idsSalvos = lerPedidosAtivosStorage();
   if (idsSalvos.length > 0){
@@ -548,7 +566,8 @@ function render(){
         <span class="dot-pulse"></span> Acompanhar ${pedidosAtivosIds.length > 1 ? `meus pedidos (${pedidosAtivosIds.length})` : 'meu pedido'}
       </div>
     ` : ''}
-    <div class="hero">
+    ${capaUrl ? `<div class="capa-wrap"><img src="${capaUrl}"/></div>` : ''}
+    <div class="hero ${capaUrl ? 'com-capa' : ''}">
       ${logoUrl ? `<div class="hero-logo-frame"><img src="${logoUrl}"/></div>` : ''}
       <div class="stamp">Delivery</div>
       <div class="mesa-tag">PEÇA E RECEBA EM CASA</div>
