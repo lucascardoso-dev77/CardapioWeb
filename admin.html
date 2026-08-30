@@ -1461,9 +1461,9 @@ const SUPABASE_ANON_KEY = "sb_publishable_ni_JrSo3MM7i5aLM9hdKOw_pl7lkZcZ";
    MASTER_SUPABASE_* é sempre o MESMO projeto (o seu, central).
    CHAVE_LICENCA é ÚNICA para cada cliente/estabelecimento.
 ========================================================= */
-const MASTER_SUPABASE_URL = "https://yeyewlwsxcfocgoftnpm.supabase.co";
-const MASTER_SUPABASE_ANON_KEY = "sb_publishable_RCr2rV4aEZ-AyT-Gc9JnZg_WE2AjAzc";
-const CHAVE_LICENCA = "facef8c255a74e41bbce68ddc2c4c0f8";
+const MASTER_SUPABASE_URL = "https://SEU-PROJETO-MASTER.supabase.co";
+const MASTER_SUPABASE_ANON_KEY = "SUA_ANON_KEY_MASTER_AQUI";
+const CHAVE_LICENCA = "TROQUE_PELA_CHAVE_DESTE_CLIENTE";
 
 async function verificarLicenca(){
   try{
@@ -1779,10 +1779,51 @@ async function excluirAdicional(id){
   renderProdutos();
 }
 
+function comprimirImagem(file, maxDimensao = 900, qualidade = 0.8, formato = 'image/jpeg'){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      let { width, height } = img;
+
+      if (width > maxDimensao || height > maxDimensao){
+        if (width > height){
+          height = Math.round(height * (maxDimensao / width));
+          width = maxDimensao;
+        } else {
+          width = Math.round(width * (maxDimensao / height));
+          height = maxDimensao;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        if (blob) resolve(blob); else reject(new Error('Falha ao comprimir imagem'));
+      }, formato, qualidade);
+    };
+
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não foi possível ler a imagem')); };
+    img.src = url;
+  });
+}
+
 async function uploadImagemProduto(file){
-  const extensao = file.name.split('.').pop();
-  const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extensao}`;
-  const { error: uploadError } = await sb.storage.from('produtos').upload(nomeArquivo, file, { upsert: false });
+  let arquivoParaEnviar = file;
+  try {
+    arquivoParaEnviar = await comprimirImagem(file, 900, 0.8); // produtos: até 900px, ótimo pra thumbnails
+  } catch (e) {
+    console.warn('Não foi possível comprimir a imagem, enviando original:', e);
+  }
+
+  const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const { error: uploadError } = await sb.storage.from('produtos').upload(nomeArquivo, arquivoParaEnviar, { upsert: false, contentType: 'image/jpeg' });
   if (uploadError){ alert("Erro ao enviar imagem: " + uploadError.message); return null; }
   const { data } = sb.storage.from('produtos').getPublicUrl(nomeArquivo);
   return data.publicUrl;
@@ -2035,6 +2076,28 @@ function renderDelivery(){
     </div>
 
     <div class="form-card">
+      <h3>Pagamento via Pix</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Quando o cliente escolher "Pix" no delivery, ele vê essa chave e a instrução de mandar o comprovante pelo WhatsApp abaixo.
+      </p>
+      <div class="form-row">
+        <div class="field">
+          <label>Chave Pix</label>
+          <input id="chavePixInput" type="text" placeholder="CPF, e-mail, telefone ou chave aleatória" value="${configuracoes.chave_pix || ''}"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>WhatsApp para receber o comprovante</label>
+          <input id="whatsappComprovanteInput" type="text" placeholder="Ex: 5538999998888 (código país + DDD + número, só números)" value="${configuracoes.whatsapp_comprovante || ''}"/>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarPixBtn">Salvar dados do Pix</button>
+      </div>
+    </div>
+
+    <div class="form-card">
       <h3>Taxa de entrega</h3>
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
         Esse valor é somado automaticamente ao total de todo pedido feito pela página de delivery.
@@ -2057,10 +2120,35 @@ function renderDelivery(){
 
   document.getElementById("salvarTaxaBtn").addEventListener("click", salvarTaxaEntrega);
   document.getElementById("salvarEnderecoBtn").addEventListener("click", salvarEnderecoLoja);
+  document.getElementById("salvarPixBtn").addEventListener("click", salvarPix);
   document.getElementById("salvarLogoBtn").addEventListener("click", salvarLogo);
   document.getElementById("removerLogoBtn")?.addEventListener("click", removerLogo);
   document.getElementById("salvarCapaBtn").addEventListener("click", salvarCapa);
   document.getElementById("removerCapaBtn")?.addEventListener("click", removerCapa);
+}
+
+async function salvarPix(){
+  const chave = document.getElementById("chavePixInput").value.trim();
+  const whatsapp = document.getElementById("whatsappComprovanteInput").value.trim().replace(/\D/g, "");
+  const btn = document.getElementById("salvarPixBtn");
+  btn.disabled = true;
+  btn.textContent = "Salvando...";
+
+  const { error } = await sb.from("configuracoes").update({
+    chave_pix: chave || null,
+    whatsapp_comprovante: whatsapp || null,
+    updated_at: new Date().toISOString()
+  }).eq("id", 1);
+
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar dados do Pix";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
 }
 
 async function salvarEnderecoLoja(){
@@ -2090,10 +2178,16 @@ async function salvarCapa(){
   btn.disabled = true;
   btn.textContent = "Enviando...";
 
-  const extensao = arquivo.name.split('.').pop();
-  const nomeArquivo = `capa.${extensao}`;
+  let arquivoParaEnviar = arquivo;
+  try {
+    arquivoParaEnviar = await comprimirImagem(arquivo, 1600, 0.82); // capa: banner largo, permite mais resolução
+  } catch (e) {
+    console.warn('Não foi possível comprimir a capa, enviando original:', e);
+  }
 
-  const { error: uploadError } = await sb.storage.from('loja').upload(nomeArquivo, arquivo, { upsert: true });
+  const nomeArquivo = `capa.jpg`;
+
+  const { error: uploadError } = await sb.storage.from('loja').upload(nomeArquivo, arquivoParaEnviar, { upsert: true, contentType: 'image/jpeg' });
   if (uploadError){
     alert("Erro ao enviar imagem: " + uploadError.message);
     btn.disabled = false;
@@ -2132,10 +2226,16 @@ async function salvarLogo(){
   btn.disabled = true;
   btn.textContent = "Enviando...";
 
-  const extensao = arquivo.name.split('.').pop();
-  const nomeArquivo = `logo.${extensao}`;
+  let arquivoParaEnviar = arquivo;
+  try {
+    arquivoParaEnviar = await comprimirImagem(arquivo, 400, 0.9, 'image/png'); // logo: PNG preserva fundo transparente
+  } catch (e) {
+    console.warn('Não foi possível comprimir a logo, enviando original:', e);
+  }
 
-  const { error: uploadError } = await sb.storage.from('loja').upload(nomeArquivo, arquivo, { upsert: true });
+  const nomeArquivo = `logo.png`;
+
+  const { error: uploadError } = await sb.storage.from('loja').upload(nomeArquivo, arquivoParaEnviar, { upsert: true, contentType: 'image/png' });
   if (uploadError){
     alert("Erro ao enviar imagem: " + uploadError.message);
     btn.disabled = false;

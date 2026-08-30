@@ -737,7 +737,7 @@ function renderProduto(p){
     <div class="produto-card ${p.imagem_url ? '' : 'sem-imagem'}">
       <div class="produto-img-wrap">
         ${p.imagem_url
-          ? `<img src="${p.imagem_url}" class="produto-img" alt="${p.nome}"/>`
+          ? `<img src="${p.imagem_url}" class="produto-img" alt="${p.nome}" loading="lazy" decoding="async"/>`
           : `<div class="produto-img-placeholder"><span>sem foto</span></div>`
         }
       </div>
