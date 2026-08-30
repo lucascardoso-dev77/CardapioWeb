@@ -1666,7 +1666,22 @@ function renderProdutos(){
     return;
   }
 
+  const produtosComFoto = produtos.filter(p => p.imagem_url);
+
   el.innerHTML = `
+    ${produtosComFoto.length > 0 ? `
+      <div class="form-card" style="border-color:rgba(192,138,46,0.4); background:#FFF8EC;">
+        <h3>🗜️ Otimizar fotos já cadastradas</h3>
+        <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+          Fotos enviadas antes da compressão automática podem estar pesadas e deixar o cardápio lento.
+          Isso baixa, comprime e resalva as ${produtosComFoto.length} foto(s) já cadastradas — sem precisar reenviar uma por uma.
+        </p>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="otimizarFotosBtn">Otimizar ${produtosComFoto.length} foto(s) agora</button>
+        </div>
+        <div id="otimizarStatus" style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-top:10px;"></div>
+      </div>
+    ` : ''}
     <div class="form-card">
       <h3>${editando ? 'Editar produto' : 'Novo produto'}</h3>
       <div class="form-row">
@@ -1758,6 +1773,53 @@ function renderProdutos(){
   el.querySelectorAll("[data-toggle-prod]").forEach(b => b.addEventListener("click", () => toggleDisponivel(b.dataset.toggleProd, b.dataset.atual === 'true')));
   document.getElementById("addAdicionalBtn")?.addEventListener("click", () => adicionarAdicional(editando.id));
   el.querySelectorAll("[data-del-adicional]").forEach(b => b.addEventListener("click", () => excluirAdicional(b.dataset.delAdicional)));
+  document.getElementById("otimizarFotosBtn")?.addEventListener("click", otimizarFotosExistentes);
+}
+
+async function otimizarFotosExistentes(){
+  const produtosComFoto = produtos.filter(p => p.imagem_url);
+  if (produtosComFoto.length === 0) return;
+
+  if (!confirm(`Isso vai baixar, comprimir e resalvar a foto de ${produtosComFoto.length} produto(s). Pode levar alguns minutos, dependendo da quantidade. Continuar?`)) return;
+
+  const btn = document.getElementById("otimizarFotosBtn");
+  const statusEl = document.getElementById("otimizarStatus");
+  btn.disabled = true;
+
+  let sucesso = 0;
+  let falhas = 0;
+
+  for (let i = 0; i < produtosComFoto.length; i++){
+    const p = produtosComFoto[i];
+    btn.textContent = `Otimizando ${i + 1}/${produtosComFoto.length}...`;
+    statusEl.textContent = `Processando: ${p.nome}`;
+
+    try {
+      const resposta = await fetch(p.imagem_url);
+      if (!resposta.ok) throw new Error('não foi possível baixar a imagem atual');
+      const blobOriginal = await resposta.blob();
+
+      const blobComprimido = await comprimirImagem(blobOriginal, 900, 0.8, 'image/jpeg');
+
+      const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error: uploadError } = await sb.storage.from('produtos').upload(nomeArquivo, blobComprimido, { upsert: false, contentType: 'image/jpeg' });
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = sb.storage.from('produtos').getPublicUrl(nomeArquivo);
+
+      const { error: updateError } = await sb.from('produtos').update({ imagem_url: urlData.publicUrl }).eq('id', p.id);
+      if (updateError) throw updateError;
+
+      sucesso++;
+    } catch (e){
+      console.error(`Erro ao otimizar foto de "${p.nome}":`, e);
+      falhas++;
+    }
+  }
+
+  await carregarDados();
+  renderProdutos();
+  alert(`Concluído!\n\n${sucesso} foto(s) otimizada(s) com sucesso.${falhas > 0 ? `\n${falhas} falharam (veja o console do navegador para detalhes).` : ''}`);
 }
 
 async function adicionarAdicional(produtoId){
