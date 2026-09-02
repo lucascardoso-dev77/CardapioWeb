@@ -435,7 +435,10 @@ function renderBoard(){
         ${logoUrl ? `<img src="${logoUrl}" style="width:30px; height:30px; object-fit:contain; border-radius:6px;"/>` : ''}
         <div class="stamp">Painel da Cozinha</div>
       </div>
-      <button class="logout-btn" id="logoutBtn">sair</button>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="logout-btn" id="emitirTodasBtn">🖨️ Emitir todas as comandas</button>
+        <button class="logout-btn" id="logoutBtn">sair</button>
+      </div>
     </div>
     ${chamados.length > 0 ? `
       <div class="chamados-bar">
@@ -469,6 +472,8 @@ function renderBoard(){
     await sb.auth.signOut();
     renderLogin();
   });
+
+  document.getElementById("emitirTodasBtn").addEventListener("click", emitirTodasComandas);
 
   document.querySelectorAll("[data-advance]").forEach(btn => {
     btn.addEventListener("click", () => avancarStatus(btn.dataset.advance, btn.dataset.novoStatus));
@@ -519,6 +524,32 @@ function renderCard(p){
       </div>
     </div>
   `;
+}
+
+async function emitirTodasComandas(){
+  if (pedidos.length === 0){
+    alert("Não há pedidos em aberto no momento.");
+    return;
+  }
+
+  if (!confirm(`Isso vai mandar reimprimir a comanda de ${pedidos.length} pedido(s) em aberto (Novo, Confirmado, Preparando e Pronto). Continuar?`)) return;
+
+  const btn = document.getElementById("emitirTodasBtn");
+  btn.disabled = true;
+  btn.textContent = "Enviando...";
+
+  const ids = pedidos.map(p => p.id);
+  const { error } = await sb.from("pedidos").update({ impresso: false }).in("id", ids);
+
+  btn.disabled = false;
+  btn.textContent = "🖨️ Emitir todas as comandas";
+
+  if (error){
+    alert("Erro ao solicitar reimpressão: " + error.message);
+    return;
+  }
+
+  alert(`Solicitado! As comandas de ${ids.length} pedido(s) devem sair na impressora em instantes (o agente de impressão precisa estar rodando no PC/Mac da impressora).`);
 }
 
 async function avancarStatus(pedidoId, novoStatus){
