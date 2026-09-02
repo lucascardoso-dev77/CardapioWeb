@@ -1036,7 +1036,7 @@ function desenharCardPedido(pedido){
   return `
     <div style="margin-bottom:34px; padding-bottom:30px; border-bottom:1px dashed #37352C;">
       <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; margin-bottom:16px; text-align:center;">
-        PEDIDO FEITO ÀS ${horaPedido}
+        PEDIDO <span style="color:var(--paper); font-weight:700;">#${pedido.numero}</span> · FEITO ÀS ${horaPedido}
       </div>
 
       ${cancelado ? `

@@ -617,6 +617,7 @@ function render(){
       <div class="stamp">Delivery</div>
       <div class="mesa-tag">PEÇA E RECEBA EM CASA</div>
       ${enderecoLoja ? `<div style="margin-top:14px; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#8A8474;">📍 ${enderecoLoja}</div>` : ''}
+      <button type="button" id="linkConsultarPedido" style="margin-top:16px; background:none; border:none; color:var(--sage); font-family:'IBM Plex Mono',monospace; font-size:12px; text-decoration:underline; cursor:pointer;">Já fez um pedido? Consultar status</button>
     </div>
 
     <div class="cat-tabs" id="catTabs">
@@ -688,6 +689,7 @@ function render(){
   document.getElementById("closeDrawer")?.addEventListener("click", closeDrawer);
   document.getElementById("sendBtn")?.addEventListener("click", () => { closeDrawer(); renderCheckout(); });
   document.getElementById("pedidoAtivoBadge")?.addEventListener("click", renderAcompanhamento);
+  document.getElementById("linkConsultarPedido")?.addEventListener("click", renderBuscarPedido);
 
   renderReceiptItems();
 }
@@ -1052,6 +1054,82 @@ const ETAPAS = [
 
 let pedidosAcompanhamento = []; // dados completos dos pedidos ativos, para re-render em tempo real
 
+let buscaPedidoErro = "";
+
+function renderBuscarPedido(){
+  telaAtual = "buscar";
+  app.innerHTML = `
+    <div class="track-screen" style="padding-top:44px;">
+      <div class="track-header">
+        ${logoUrl ? `<div class="track-logo-frame"><img src="${logoUrl}"/></div>` : ''}
+        <div class="stamp">Consultar pedido</div>
+        <div class="mesa-tag" style="margin-top:14px;">DELIVERY</div>
+      </div>
+
+      <div class="track-itens" style="margin-bottom:18px;">
+        <label style="display:block; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Número do pedido</label>
+        <input type="number" id="buscaNumero" placeholder="Ex: 142" style="width:100%; padding:11px 12px; border-radius:8px; border:1px solid #37352C; background:#14140F; color:var(--paper); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:14px;"/>
+
+        <label style="display:block; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Telefone usado no pedido</label>
+        <input type="tel" id="buscaTelefone" placeholder="(00) 00000-0000" style="width:100%; padding:11px 12px; border-radius:8px; border:1px solid #37352C; background:#14140F; color:var(--paper); font-family:'Inter',sans-serif; font-size:14px;"/>
+      </div>
+
+      ${buscaPedidoErro ? `<div class="track-cancelado" style="margin-bottom:18px;">${buscaPedidoErro}</div>` : ''}
+
+      <button class="btn-send" id="buscarPedidoBtn" style="width:100%;">BUSCAR PEDIDO</button>
+      <button class="btn-outline" id="voltarDoBuscaBtn" style="width:100%;">Voltar ao cardápio</button>
+    </div>
+  `;
+
+  document.getElementById("voltarDoBuscaBtn").addEventListener("click", () => { buscaPedidoErro = ""; render(); });
+  document.getElementById("buscarPedidoBtn").addEventListener("click", executarBuscaPedido);
+}
+
+async function executarBuscaPedido(){
+  const numero = parseInt(document.getElementById("buscaNumero").value);
+  const telefoneDigitado = document.getElementById("buscaTelefone").value.replace(/\D/g, "");
+
+  if (!numero || !telefoneDigitado){
+    buscaPedidoErro = "Preencha o número do pedido e o telefone usado nele.";
+    renderBuscarPedido();
+    return;
+  }
+
+  const btn = document.getElementById("buscarPedidoBtn");
+  btn.disabled = true;
+  btn.textContent = "Buscando...";
+
+  const { data, error } = await sb
+    .from("pedidos")
+    .select("*, itens_pedido(*)")
+    .eq("numero", numero)
+    .eq("tipo", "delivery")
+    .maybeSingle();
+
+  const telefoneCadastrado = (data?.telefone_cliente || "").replace(/\D/g, "");
+
+  if (error || !data || !telefoneCadastrado || telefoneCadastrado !== telefoneDigitado){
+    buscaPedidoErro = "Pedido não encontrado. Confira o número e o telefone informados.";
+    renderBuscarPedido();
+    return;
+  }
+
+  buscaPedidoErro = "";
+
+  if (!["entregue", "cancelado"].includes(data.status)){
+    if (!pedidosAtivosIds.includes(data.id)){
+      pedidosAtivosIds = [...pedidosAtivosIds, data.id];
+      salvarPedidosAtivosStorage(pedidosAtivosIds);
+    }
+    renderAcompanhamento();
+  } else {
+    // pedido já finalizado: mostra o status sem salvar pra acompanhamento contínuo
+    pedidosAcompanhamento = [data];
+    telaAtual = "acompanhamento";
+    desenharAcompanhamento();
+  }
+}
+
 async function renderAcompanhamento(){
   telaAtual = "acompanhamento";
   if (canalRealtimePedidos){ sb.removeChannel(canalRealtimePedidos); canalRealtimePedidos = null; }
@@ -1135,7 +1213,7 @@ function desenharCardPedido(pedido){
   return `
     <div style="margin-bottom:34px; padding-bottom:30px; border-bottom:1px dashed #37352C;">
       <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; margin-bottom:16px; text-align:center;">
-        PEDIDO FEITO ÀS ${horaPedido}
+        PEDIDO <span style="color:var(--paper); font-weight:700;">#${pedido.numero}</span> · FEITO ÀS ${horaPedido}
       </div>
 
       ${cancelado ? `
@@ -1178,7 +1256,7 @@ function desenharCardPedido(pedido){
           </div>
           <div style="font-size:12.5px; color:#B8B2A2; line-height:1.5;">Se ainda não pagou, pague o valor total nessa chave${whatsappComprovante ? ' e envie o comprovante:' : '.'}</div>
           ${whatsappComprovante ? `
-            <a href="https://wa.me/${whatsappComprovante}?text=${encodeURIComponent(`Olá! Segue o comprovante do meu pedido no Cardápio Rápido (Pix de ${formatBRL(pedido.total)}).`)}" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#25D366; color:#0B1A0F; padding:9px 16px; border-radius:999px; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; text-decoration:none;">
+            <a href="https://wa.me/${whatsappComprovante}?text=${encodeURIComponent(`Olá! Segue o comprovante do meu pedido #${pedido.numero} no Cardápio Rápido (Pix de ${formatBRL(pedido.total)}).`)}" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#25D366; color:#0B1A0F; padding:9px 16px; border-radius:999px; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; text-decoration:none;">
               💬 Enviar comprovante no WhatsApp
             </a>
           ` : ''}
