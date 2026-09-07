@@ -1572,7 +1572,12 @@ function render(){
         ${configuracoes.logo_url ? `<img src="${configuracoes.logo_url}" style="width:32px; height:32px; object-fit:contain; border-radius:6px;"/>` : ''}
         <div class="stamp">Administração do Cardápio</div>
       </div>
-      <button class="logout-btn" id="logoutBtn">sair</button>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="logout-btn" id="toggleLojaBtn" style="${configuracoes.loja_aberta === false ? 'background:rgba(180,57,44,0.15); border-color:var(--stamp); color:var(--stamp);' : 'background:rgba(110,122,86,0.15); border-color:var(--sage); color:var(--sage);'}">
+          ${configuracoes.loja_aberta === false ? '🔴 Loja pausada — clique pra reabrir' : '🟢 Loja aberta — clique pra pausar'}
+        </button>
+        <button class="logout-btn" id="logoutBtn">sair</button>
+      </div>
     </div>
     <div class="tabs">
       <button class="tab-btn ${abaAtiva === 'produtos' ? 'active' : ''}" data-tab="produtos">Produtos</button>
@@ -1583,12 +1588,25 @@ function render(){
     <div class="content"><div class="content-inner" id="contentInner"></div></div>
   `;
   document.getElementById("logoutBtn").addEventListener("click", async () => { await sb.auth.signOut(); renderLogin(); });
+  document.getElementById("toggleLojaBtn").addEventListener("click", toggleLojaAberta);
   document.querySelectorAll(".tab-btn").forEach(b => b.addEventListener("click", () => { abaAtiva = b.dataset.tab; render(); }));
 
   if (abaAtiva === "produtos") renderProdutos();
   else if (abaAtiva === "categorias") renderCategorias();
   else if (abaAtiva === "mesas") renderMesas();
   else renderDelivery();
+}
+
+async function toggleLojaAberta(){
+  const novoValor = !(configuracoes.loja_aberta !== false);
+  const acao = novoValor ? "reabrir a loja" : "PAUSAR a loja (nenhum pedido novo vai ser aceito, nem mesa nem delivery)";
+  if (!confirm(`Tem certeza que quer ${acao}?`)) return;
+
+  const { error } = await sb.from("configuracoes").update({ loja_aberta: novoValor, updated_at: new Date().toISOString() }).eq("id", 1);
+  if (error){ alert("Erro: " + error.message); return; }
+
+  await carregarDados();
+  render();
 }
 
 /* ---------------- CATEGORIAS ---------------- */
@@ -2080,6 +2098,37 @@ function renderDelivery(){
   const el = document.getElementById("contentInner");
   el.innerHTML = `
     <div class="form-card">
+      <h3>Horário de funcionamento (delivery)</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Fora desse horário, a página de delivery mostra "estamos fechados" em vez do cardápio. Baseado no horário do celular de quem está acessando.
+      </p>
+      <div class="form-row">
+        <div class="field"><label>Abre às</label><input id="horarioAberturaInput" type="time" value="${configuracoes.horario_abertura?.slice(0,5) || '00:00'}"/></div>
+        <div class="field"><label>Fecha às</label><input id="horarioFechamentoInput" type="time" value="${configuracoes.horario_fechamento?.slice(0,5) || '23:59'}"/></div>
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft); margin-bottom:10px;">
+        Dica: se "fecha às" for menor que "abre às" (ex: abre 18:00, fecha 02:00), o sistema entende que passa da meia-noite.
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarHorarioBtn">Salvar horário</button>
+      </div>
+    </div>
+
+    <div class="form-card">
+      <h3>Proteção contra spam de pedidos</h3>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
+        Limita quantos pedidos o mesmo celular/computador pode enviar em pouco tempo, evitando pedidos falsos em massa.
+      </p>
+      <div class="form-row">
+        <div class="field" style="max-width:160px"><label>Máx. de pedidos</label><input id="spamMaxInput" type="number" min="1" value="${configuracoes.spam_max_pedidos ?? 5}"/></div>
+        <div class="field" style="max-width:160px"><label>A cada quantos minutos</label><input id="spamJanelaInput" type="number" min="1" value="${configuracoes.spam_janela_minutos ?? 10}"/></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="salvarSpamBtn">Salvar proteção</button>
+      </div>
+    </div>
+
+    <div class="form-card">
       <h3>Logo da empresa</h3>
       <p style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--ink-soft); margin-bottom:14px;">
         Aparece no topo do cardápio, do delivery e do painel da cozinha.
@@ -2183,10 +2232,64 @@ function renderDelivery(){
   document.getElementById("salvarTaxaBtn").addEventListener("click", salvarTaxaEntrega);
   document.getElementById("salvarEnderecoBtn").addEventListener("click", salvarEnderecoLoja);
   document.getElementById("salvarPixBtn").addEventListener("click", salvarPix);
+  document.getElementById("salvarHorarioBtn").addEventListener("click", salvarHorarioFuncionamento);
+  document.getElementById("salvarSpamBtn").addEventListener("click", salvarProtecaoSpam);
   document.getElementById("salvarLogoBtn").addEventListener("click", salvarLogo);
   document.getElementById("removerLogoBtn")?.addEventListener("click", removerLogo);
   document.getElementById("salvarCapaBtn").addEventListener("click", salvarCapa);
   document.getElementById("removerCapaBtn")?.addEventListener("click", removerCapa);
+}
+
+async function salvarHorarioFuncionamento(){
+  const abertura = document.getElementById("horarioAberturaInput").value;
+  const fechamento = document.getElementById("horarioFechamentoInput").value;
+  if (!abertura || !fechamento) return alert("Preencha os dois horários.");
+
+  const btn = document.getElementById("salvarHorarioBtn");
+  btn.disabled = true;
+  btn.textContent = "Salvando...";
+
+  const { error } = await sb.from("configuracoes").update({
+    horario_abertura: abertura,
+    horario_fechamento: fechamento,
+    updated_at: new Date().toISOString()
+  }).eq("id", 1);
+
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar horário";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
+}
+
+async function salvarProtecaoSpam(){
+  const max = parseInt(document.getElementById("spamMaxInput").value);
+  const janela = parseInt(document.getElementById("spamJanelaInput").value);
+  if (!max || max < 1 || !janela || janela < 1) return alert("Digite valores válidos (maiores que zero).");
+
+  const btn = document.getElementById("salvarSpamBtn");
+  btn.disabled = true;
+  btn.textContent = "Salvando...";
+
+  const { error } = await sb.from("configuracoes").update({
+    spam_max_pedidos: max,
+    spam_janela_minutos: janela,
+    updated_at: new Date().toISOString()
+  }).eq("id", 1);
+
+  if (error){
+    alert("Erro ao salvar: " + error.message);
+    btn.disabled = false;
+    btn.textContent = "Salvar proteção";
+    return;
+  }
+
+  await carregarDados();
+  renderDelivery();
 }
 
 async function salvarPix(){

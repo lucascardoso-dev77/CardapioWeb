@@ -557,6 +557,16 @@ const toastEl = document.getElementById("toast");
 
 let mesa = null;          // { id, numero }
 let logoUrl = null;
+
+function obterDeviceId(){
+  const CHAVE = "device_id_cardapio";
+  let id = localStorage.getItem(CHAVE);
+  if (!id){
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(CHAVE, id);
+  }
+  return id;
+}
 let capaUrl = null;
 let categorias = [];
 let produtos = [];
@@ -920,7 +930,7 @@ async function enviarPedido(){
   try{
     const { data: pedido, error: pedidoErr } = await sb
       .from("pedidos")
-      .insert({ mesa_id: mesa.id, total: cartTotal(), status: "novo" })
+      .insert({ mesa_id: mesa.id, total: cartTotal(), status: "novo", device_id: obterDeviceId() })
       .select()
       .single();
 
@@ -946,7 +956,13 @@ async function enviarPedido(){
     renderAcompanhamento();
   } catch(err){
     console.error(err);
-    showToast("Não foi possível enviar o pedido. Tente novamente.");
+    let mensagem = "Não foi possível enviar o pedido. Tente novamente.";
+    if (err.message?.includes("LIMITE_PEDIDOS")){
+      mensagem = "Muitos pedidos em pouco tempo. Aguarde alguns minutos e tente de novo.";
+    } else if (err.message?.includes("LOJA_PAUSADA")){
+      mensagem = "A cozinha pausou os pedidos no momento. Chame um atendente.";
+    }
+    showToast(mensagem);
     sendBtn.disabled = false;
     sendBtn.textContent = "ENVIAR PEDIDO PARA A COZINHA";
   }

@@ -543,6 +543,35 @@ let capaUrl = null;
 let enderecoLoja = null;
 let chavePix = null;
 let whatsappComprovante = null;
+let lojaAberta = true;
+let horarioAbertura = "00:00";
+let horarioFechamento = "23:59";
+
+function obterDeviceId(){
+  const CHAVE = "device_id_cardapio";
+  let id = localStorage.getItem(CHAVE);
+  if (!id){
+    id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    localStorage.setItem(CHAVE, id);
+  }
+  return id;
+}
+
+function estaDentroDoHorario(abertura, fechamento){
+  const agora = new Date();
+  const minutosAgora = agora.getHours() * 60 + agora.getMinutes();
+  const [ha, ma] = abertura.split(":").map(Number);
+  const [hf, mf] = fechamento.split(":").map(Number);
+  const minAbertura = ha * 60 + ma;
+  const minFechamento = hf * 60 + mf;
+
+  if (minFechamento === minAbertura) return true; // 24h
+  if (minFechamento > minAbertura){
+    return minutosAgora >= minAbertura && minutosAgora < minFechamento;
+  }
+  // fecha depois da meia-noite (ex: abre 18:00, fecha 02:00)
+  return minutosAgora >= minAbertura || minutosAgora < minFechamento;
+}
 let pedidosAtivosIds = [];  // ids de TODOS os pedidos de delivery em aberto (guardado no navegador)
 let telaAtual = "cardapio"; // "cardapio" | "checkout" | "acompanhamento"
 let canalRealtimePedidos = null;
@@ -571,13 +600,16 @@ function formatBRL(v){
 }
 
 async function init(){
-  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url, capa_url, endereco_loja, chave_pix, whatsapp_comprovante").eq("id", 1).maybeSingle();
+  const { data: config } = await sb.from("configuracoes").select("taxa_entrega, logo_url, capa_url, endereco_loja, chave_pix, whatsapp_comprovante, loja_aberta, horario_abertura, horario_fechamento").eq("id", 1).maybeSingle();
   taxaEntrega = config ? Number(config.taxa_entrega) : 0;
   logoUrl = config?.logo_url || null;
   capaUrl = config?.capa_url || null;
   enderecoLoja = config?.endereco_loja || null;
   chavePix = config?.chave_pix || null;
   whatsappComprovante = config?.whatsapp_comprovante || null;
+  lojaAberta = config?.loja_aberta !== false;
+  horarioAbertura = config?.horario_abertura?.slice(0,5) || "00:00";
+  horarioFechamento = config?.horario_fechamento?.slice(0,5) || "23:59";
 
   const idsSalvos = lerPedidosAtivosStorage();
   if (idsSalvos.length > 0){
@@ -596,8 +628,45 @@ async function init(){
   produtos = prodData || [];
   activeCat = categorias[0]?.id || null;
 
+  // pedidos já em acompanhamento sempre podem ser vistos, mesmo com a loja fechada
   if (pedidosAtivosIds.length > 0){
     renderAcompanhamento();
+    return;
+  }
+
+  const fechadoAgora = !lojaAberta || !estaDentroDoHorario(horarioAbertura, horarioFechamento);
+  if (fechadoAgora){
+    renderFechado();
+  } else {
+    render();
+  }
+}
+
+function renderFechado(){
+  telaAtual = "fechado";
+  const motivoPausada = !lojaAberta;
+  app.innerHTML = `
+    <div class="track-screen" style="padding-top:60px; text-align:center;">
+      <div class="track-header">
+        ${logoUrl ? `<div class="track-logo-frame"><img src="${logoUrl}"/></div>` : ''}
+        <div class="stamp">${motivoPausada ? 'Fechado no momento' : 'Estamos fechados'}</div>
+      </div>
+      <p style="font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:#B8B2A2; line-height:1.7; margin-bottom:24px;">
+        ${motivoPausada
+          ? 'A loja pausou os pedidos temporariamente. Tente novamente daqui a pouco.'
+          : `Nosso horário de atendimento é das <strong style="color:var(--paper);">${horarioAbertura}</strong> às <strong style="color:var(--paper);">${horarioFechamento}</strong>. Volte nesse horário pra fazer seu pedido!`
+        }
+      </p>
+      <button type="button" id="linkConsultarPedidoFechado" style="background:none; border:none; color:var(--sage); font-family:'IBM Plex Mono',monospace; font-size:12.5px; text-decoration:underline; cursor:pointer;">Já fez um pedido? Consultar status</button>
+    </div>
+  `;
+  document.getElementById("linkConsultarPedidoFechado").addEventListener("click", renderBuscarPedido);
+}
+
+function voltarTelaInicial(){
+  const fechadoAgora = !lojaAberta || !estaDentroDoHorario(horarioAbertura, horarioFechamento);
+  if (pedidosAtivosIds.length === 0 && fechadoAgora){
+    renderFechado();
   } else {
     render();
   }
@@ -934,7 +1003,7 @@ function renderCheckout(){
     });
   });
 
-  document.getElementById("voltarCarrinhoBtn").addEventListener("click", () => { render(); openDrawer(); });
+  document.getElementById("voltarCarrinhoBtn").addEventListener("click", () => { voltarTelaInicial(); openDrawer(); });
   document.getElementById("confirmarPedidoBtn").addEventListener("click", enviarPedido);
   document.getElementById("copiarPixBtn")?.addEventListener("click", copiarChavePix);
 }
@@ -1010,7 +1079,8 @@ async function enviarPedido(){
         troco_para: (formaPagamento === "dinheiro" && trocoPara) ? parseFloat(trocoPara) : null,
         taxa_entrega: taxaEntrega,
         total: cartTotal() + taxaEntrega,
-        status: "novo"
+        status: "novo",
+        device_id: obterDeviceId()
       })
       .select()
       .single();
@@ -1037,7 +1107,13 @@ async function enviarPedido(){
     renderAcompanhamento();
   } catch(err){
     console.error(err);
-    showToast("Não foi possível enviar o pedido. Tente novamente.");
+    let mensagem = "Não foi possível enviar o pedido. Tente novamente.";
+    if (err.message?.includes("LIMITE_PEDIDOS")){
+      mensagem = "Você enviou pedidos rápido demais. Aguarde alguns minutos e tente de novo.";
+    } else if (err.message?.includes("LOJA_PAUSADA")){
+      mensagem = "A loja pausou os pedidos no momento. Tente novamente mais tarde.";
+    }
+    showToast(mensagem);
     btn.disabled = false;
     btn.textContent = "CONFIRMAR PEDIDO";
   }
@@ -1081,7 +1157,7 @@ function renderBuscarPedido(){
     </div>
   `;
 
-  document.getElementById("voltarDoBuscaBtn").addEventListener("click", () => { buscaPedidoErro = ""; render(); });
+  document.getElementById("voltarDoBuscaBtn").addEventListener("click", () => { buscaPedidoErro = ""; voltarTelaInicial(); });
   document.getElementById("buscarPedidoBtn").addEventListener("click", executarBuscaPedido);
 }
 
@@ -1193,7 +1269,7 @@ function desenharAcompanhamento(){
     </div>
   `;
 
-  document.getElementById("voltarCardapioBtn").addEventListener("click", render);
+  document.getElementById("voltarCardapioBtn").addEventListener("click", voltarTelaInicial);
   document.querySelectorAll(".copiar-pix-track").forEach(btn => {
     btn.addEventListener("click", () => {
       navigator.clipboard.writeText(btn.dataset.chave).then(() => {
