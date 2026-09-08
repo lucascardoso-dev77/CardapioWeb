@@ -1005,48 +1005,14 @@ function renderCheckout(){
 
   document.getElementById("voltarCarrinhoBtn").addEventListener("click", () => { voltarTelaInicial(); openDrawer(); });
   document.getElementById("confirmarPedidoBtn").addEventListener("click", enviarPedido);
-  document.getElementById("copiarPixBtn")?.addEventListener("click", copiarChavePix);
 }
 
 function renderInstrucoesPix(){
-  if (!chavePix){
-    return `
-      <div style="margin-top:12px; padding:12px 14px; background:rgba(192,138,46,0.12); border:1px solid rgba(192,138,46,0.3); border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#D9A75B;">
-        A loja ainda não configurou uma chave Pix. Escolha outra forma de pagamento ou combine com o atendente.
-      </div>
-    `;
-  }
-
-  const totalPedido = cartTotal() + taxaEntrega;
-  const msgWhats = encodeURIComponent(`Olá! Segue o comprovante do meu pedido no Cardápio Rápido (Pix de ${formatBRL(totalPedido)}).`);
-  const linkWhats = whatsappComprovante ? `https://wa.me/${whatsappComprovante}?text=${msgWhats}` : null;
-
   return `
-    <div style="margin-top:12px; padding:14px; background:#14140F; border:1px dashed #37352C; border-radius:10px;">
-      <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Chave Pix</div>
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
-        <div id="chavePixTexto" style="flex:1; font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:var(--paper); word-break:break-all;">${chavePix}</div>
-        <button type="button" id="copiarPixBtn" style="flex:0 0 auto; background:var(--sage); color:#fff; border:none; padding:8px 12px; border-radius:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer;">copiar</button>
-      </div>
-      <div style="font-size:12.5px; color:#B8B2A2; line-height:1.5;">
-        Pague o valor total do pedido nessa chave e ${linkWhats ? 'envie o comprovante pelo WhatsApp:' : 'guarde o comprovante do pagamento.'}
-      </div>
-      ${linkWhats ? `
-        <a href="${linkWhats}" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#25D366; color:#0B1A0F; padding:9px 16px; border-radius:999px; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; text-decoration:none;">
-          💬 Enviar comprovante no WhatsApp
-        </a>
-      ` : ''}
+    <div style="margin-top:12px; padding:12px 14px; background:rgba(110,122,86,0.12); border:1px solid rgba(110,122,86,0.3); border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#9FB98A;">
+      Depois de confirmar, vamos gerar um QR Code Pix exclusivo pra esse pedido — é só escanear e pagar.
     </div>
   `;
-}
-
-function copiarChavePix(){
-  if (!chavePix) return;
-  navigator.clipboard.writeText(chavePix).then(() => {
-    showToast("Chave Pix copiada!");
-  }).catch(() => {
-    showToast("Não foi possível copiar. Copie manualmente: " + chavePix);
-  });
 }
 
 async function enviarPedido(){
@@ -1104,6 +1070,11 @@ async function enviarPedido(){
     checkoutData = { nome:"", telefone:"", endereco:"", forma_pagamento:"", troco_para:"" };
     pedidosAtivosIds = [...pedidosAtivosIds, pedido.id];
     salvarPedidosAtivosStorage(pedidosAtivosIds);
+
+    if (formaPagamento === "pix"){
+      gerarPagamentoPix(pedido.id); // dispara em segundo plano, não trava a tela
+    }
+
     renderAcompanhamento();
   } catch(err){
     console.error(err);
@@ -1116,6 +1087,37 @@ async function enviarPedido(){
     showToast(mensagem);
     btn.disabled = false;
     btn.textContent = "CONFIRMAR PEDIDO";
+  }
+}
+
+async function gerarPagamentoPix(pedidoId){
+  try{
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/criar-pagamento-pix`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+      },
+      body: JSON.stringify({ pedido_id: pedidoId })
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok || data.error){
+      console.warn("Pix automático indisponível, usando chave manual como alternativa:", data.error);
+      return; // sem problema — o card de acompanhamento já cai no modo manual (chave fixa) se não tiver QR
+    }
+
+    // atualiza a tela na hora se o cliente ainda estiver vendo o acompanhamento desse pedido
+    const pedidoLocal = pedidosAcompanhamento.find(p => p.id === pedidoId);
+    if (pedidoLocal){
+      pedidoLocal.pix_qr_code_base64 = data.qr_code_base64;
+      pedidoLocal.pix_copia_cola = data.copia_cola;
+      desenharAcompanhamento();
+    }
+  } catch(e){
+    console.warn("Não foi possível gerar o Pix automático, seguindo com chave manual:", e);
   }
 }
 
@@ -1323,21 +1325,56 @@ function desenharCardPedido(pedido){
         <div class="track-total"><span>TOTAL</span><span>${formatBRL(pedido.total)}</span></div>
       </div>
 
-      ${(pedido.forma_pagamento === 'pix' && !cancelado && chavePix) ? `
-        <div style="margin-top:14px; padding:14px; background:#14140F; border:1px dashed #37352C; border-radius:10px;">
-          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Chave Pix</div>
-          <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
-            <div style="flex:1; font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:var(--paper); word-break:break-all;">${chavePix}</div>
-            <button type="button" class="copiar-pix-track" data-chave="${chavePix}" style="flex:0 0 auto; background:var(--sage); color:#fff; border:none; padding:8px 12px; border-radius:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer;">copiar</button>
-          </div>
-          <div style="font-size:12.5px; color:#B8B2A2; line-height:1.5;">Se ainda não pagou, pague o valor total nessa chave${whatsappComprovante ? ' e envie o comprovante:' : '.'}</div>
-          ${whatsappComprovante ? `
-            <a href="https://wa.me/${whatsappComprovante}?text=${encodeURIComponent(`Olá! Segue o comprovante do meu pedido #${pedido.numero} no Cardápio Rápido (Pix de ${formatBRL(pedido.total)}).`)}" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#25D366; color:#0B1A0F; padding:9px 16px; border-radius:999px; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; text-decoration:none;">
-              💬 Enviar comprovante no WhatsApp
-            </a>
-          ` : ''}
+      ${(pedido.forma_pagamento === 'pix' && !cancelado) ? renderBlocoPix(pedido) : ''}
+    </div>
+  `;
+}
+
+function renderBlocoPix(pedido){
+  if (pedido.pago){
+    return `
+      <div style="margin-top:14px; padding:14px; background:rgba(110,122,86,0.15); border:1px solid var(--sage); border-radius:10px; text-align:center;">
+        <div style="font-size:22px; margin-bottom:4px;">✅</div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--sage); font-weight:700;">Pagamento confirmado!</div>
+      </div>
+    `;
+  }
+
+  if (pedido.pix_qr_code_base64){
+    return `
+      <div style="margin-top:14px; padding:14px; background:#14140F; border:1px dashed #37352C; border-radius:10px; text-align:center;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">Escaneie pra pagar com Pix</div>
+        <img src="data:image/png;base64,${pedido.pix_qr_code_base64}" alt="QR Code Pix" style="width:180px; height:180px; margin:0 auto 12px; border-radius:8px; background:#fff; padding:8px;"/>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+          <div style="flex:1; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--paper); word-break:break-all; text-align:left;">${pedido.pix_copia_cola}</div>
+          <button type="button" class="copiar-pix-track" data-chave="${pedido.pix_copia_cola}" style="flex:0 0 auto; background:var(--sage); color:#fff; border:none; padding:8px 12px; border-radius:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer;">copiar</button>
         </div>
-      ` : ''}
+        <div style="font-size:12px; color:#B8B2A2; margin-top:8px;">⏳ Aguardando confirmação do pagamento...</div>
+      </div>
+    `;
+  }
+
+  if (chavePix){
+    return `
+      <div style="margin-top:14px; padding:14px; background:#14140F; border:1px dashed #37352C; border-radius:10px;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#8B8574; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Chave Pix</div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+          <div style="flex:1; font-family:'IBM Plex Mono',monospace; font-size:13.5px; color:var(--paper); word-break:break-all;">${chavePix}</div>
+          <button type="button" class="copiar-pix-track" data-chave="${chavePix}" style="flex:0 0 auto; background:var(--sage); color:#fff; border:none; padding:8px 12px; border-radius:7px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer;">copiar</button>
+        </div>
+        <div style="font-size:12.5px; color:#B8B2A2; line-height:1.5;">Se ainda não pagou, pague o valor total nessa chave${whatsappComprovante ? ' e envie o comprovante:' : '.'}</div>
+        ${whatsappComprovante ? `
+          <a href="https://wa.me/${whatsappComprovante}?text=${encodeURIComponent(`Olá! Segue o comprovante do meu pedido #${pedido.numero} no Cardápio Rápido (Pix de ${formatBRL(pedido.total)}).`)}" target="_blank" rel="noopener" style="display:inline-flex; align-items:center; gap:6px; margin-top:10px; background:#25D366; color:#0B1A0F; padding:9px 16px; border-radius:999px; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; text-decoration:none;">
+            💬 Enviar comprovante no WhatsApp
+          </a>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  return `
+    <div style="margin-top:14px; padding:12px 14px; background:rgba(192,138,46,0.12); border:1px solid rgba(192,138,46,0.3); border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#D9A75B;">
+      Gerando informações de pagamento... se não aparecer em alguns segundos, chame a loja.
     </div>
   `;
 }
