@@ -643,6 +643,7 @@ async function init(){
 }
 
 function renderFechado(){
+  pararPollingPix();
   telaAtual = "fechado";
   const motivoPausada = !lojaAberta;
   app.innerHTML = `
@@ -673,6 +674,7 @@ function voltarTelaInicial(){
 }
 
 function render(){
+  pararPollingPix();
   telaAtual = "cardapio";
   app.innerHTML = `
     ${pedidosAtivosIds.length > 0 ? `
@@ -948,6 +950,7 @@ function renderReceiptItems(){
 let checkoutData = { nome:"", telefone:"", endereco:"", forma_pagamento:"", troco_para:"" };
 
 function renderCheckout(){
+  pararPollingPix();
   telaAtual = "checkout";
   app.innerHTML = `
     <div class="track-screen" style="padding-top:36px;">
@@ -1135,6 +1138,7 @@ let pedidosAcompanhamento = []; // dados completos dos pedidos ativos, para re-r
 let buscaPedidoErro = "";
 
 function renderBuscarPedido(){
+  pararPollingPix();
   telaAtual = "buscar";
   app.innerHTML = `
     <div class="track-screen" style="padding-top:44px;">
@@ -1281,6 +1285,54 @@ function desenharAcompanhamento(){
       });
     });
   });
+
+  iniciarPollingPix();
+}
+
+let intervaloPollingPix = null;
+
+function pararPollingPix(){
+  if (intervaloPollingPix){
+    clearInterval(intervaloPollingPix);
+    intervaloPollingPix = null;
+  }
+}
+
+function iniciarPollingPix(){
+  pararPollingPix();
+
+  const temPendente = () => pedidosAcompanhamento.some(p => p.forma_pagamento === "pix" && !p.pago && p.status !== "cancelado");
+  if (!temPendente()) return;
+
+  intervaloPollingPix = setInterval(async () => {
+    const pendentes = pedidosAcompanhamento.filter(p => p.forma_pagamento === "pix" && !p.pago && p.status !== "cancelado");
+    if (pendentes.length === 0){ pararPollingPix(); return; }
+
+    let mudou = false;
+    for (const p of pendentes){
+      try{
+        const resp = await fetch(`${SUPABASE_URL}/functions/v1/verificar-pagamento-pix`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({ pedido_id: p.id })
+        });
+        const data = await resp.json();
+        if (data.pago){
+          const local = pedidosAcompanhamento.find(x => x.id === p.id);
+          if (local && !local.pago){ local.pago = true; mudou = true; }
+        }
+      } catch(e){
+        console.warn("Erro ao verificar pagamento Pix:", e);
+      }
+    }
+
+    if (mudou) desenharAcompanhamento(); // re-renderiza (isso já reinicia o polling só com quem ainda falta)
+    else if (!temPendente()) pararPollingPix();
+  }, 6000);
 }
 
 function desenharCardPedido(pedido){
