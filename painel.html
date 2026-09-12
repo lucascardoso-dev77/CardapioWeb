@@ -389,6 +389,7 @@ async function loadPedidos(){
     .from("pedidos")
     .select("*, mesas(numero), itens_pedido(*)")
     .in("status", ["novo", "confirmado", "preparando", "pronto"])
+    .or("forma_pagamento.is.null,forma_pagamento.neq.pix,pago.eq.true") // pedido Pix só aparece depois de pago (mesa não tem forma_pagamento, então continua aparecendo normal)
     .order("created_at", { ascending:true });
 
   if (error){ console.error(error); return; }
@@ -484,6 +485,41 @@ function renderBoard(){
   document.querySelectorAll("[data-atender]").forEach(btn => {
     btn.addEventListener("click", () => atenderChamado(btn.dataset.atender));
   });
+  document.querySelectorAll("[data-verificar-pix]").forEach(btn => {
+    btn.addEventListener("click", () => verificarPagamentoPix(btn.dataset.verificarPix, btn));
+  });
+}
+
+async function verificarPagamentoPix(pedidoId, btnEl){
+  btnEl.disabled = true;
+  btnEl.textContent = "Verificando...";
+
+  try{
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/verificar-pagamento-pix`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+      },
+      body: JSON.stringify({ pedido_id: pedidoId })
+    });
+    const data = await resp.json();
+
+    if (data.pago){
+      await loadPedidos();
+      renderBoard();
+    } else {
+      btnEl.disabled = false;
+      btnEl.textContent = "🔄 Já paguei, verificar agora";
+      alert("Ainda não identificamos o pagamento desse pedido no Mercado Pago. Tente de novo em alguns segundos.");
+    }
+  } catch(e){
+    console.error(e);
+    btnEl.disabled = false;
+    btnEl.textContent = "🔄 Já paguei, verificar agora";
+    alert("Erro ao verificar o pagamento. Tente de novo.");
+  }
 }
 
 const LABEL_PAGAMENTO = { dinheiro: "Dinheiro", cartao: "Cartão", pix: "Pix" };
@@ -504,6 +540,7 @@ function renderCard(p){
           <strong>${p.nome_cliente || 'Sem nome'}</strong>${p.telefone_cliente ? ` · ${p.telefone_cliente}` : ''}<br/>
           📍 ${p.endereco || '(sem endereço)'}<br/>
           💳 ${LABEL_PAGAMENTO[p.forma_pagamento] || p.forma_pagamento || '—'}${p.forma_pagamento === 'dinheiro' && p.troco_para ? ` (troco para ${formatBRL(p.troco_para)})` : ''}
+          ${p.forma_pagamento === 'pix' ? `<br/>${p.pago ? '✅ Pix confirmado' : '⏳ Pix aguardando pagamento'}` : ''}
         </div>
       ` : ''}
       <div class="card-items">
@@ -522,6 +559,11 @@ function renderCard(p){
         <button class="btn-advance" data-advance="${p.id}" data-novo-status="${proximo}">${LABEL_ACAO[p.status]}</button>
         ${['novo', 'confirmado'].includes(p.status) ? `<button class="btn-cancel" data-cancel="${p.id}">cancelar</button>` : ''}
       </div>
+      ${p.forma_pagamento === 'pix' && !p.pago ? `
+        <div class="card-actions" style="margin-top:8px;">
+          <button class="btn-cancel" data-verificar-pix="${p.id}" style="border-color:var(--sage) !important; color:var(--sage) !important;">🔄 Já paguei, verificar agora</button>
+        </div>
+      ` : ''}
     </div>
   `;
 }
